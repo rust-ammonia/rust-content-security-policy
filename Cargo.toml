@@ -10,3 +10,6 @@ documentation = "https://docs.rs/content-security-policy/"
 repository = "https://github.com/notriddle/rust-content-security-policy"
 
 [dependencies]
+
+[dev-dependencies]
+version-sync = "0.3"
