@@ -1,0 +1,24 @@
+use types;
+
+grammar;
+
+// https://www.w3.org/TR/CSP/#framework-directive-source-list
+
+pub SourceExpression: types::Source<'input> = {
+  SchemeSource,
+  KeywordSource,
+};
+
+SchemeSource: types::Source<'input> = <Scheme> ":" => types::Source::Scheme(<>);
+
+KeywordSource: types::Source<'input> = {
+  "'self'" => types::Source::Self_,
+  "'unsafe-inline'" => types::Source::UnsafeInline,
+  "'unsafe-eval'" => types::Source::UnsafeEval,
+  "'strict-dynamic'" => types::Source::StrictDynamic,
+  "'unsafe-hashed-attributes'" => types::Source::UnsafeHashedAttributes,
+};
+
+// https://tools.ietf.org/html/rfc3986#section-3.1
+
+Scheme = r"[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)*";
