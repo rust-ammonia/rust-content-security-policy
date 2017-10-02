@@ -1,0 +1,1 @@
+Parse and validate Web [Content-Security-Policy level 3](https://www.w3.org/TR/CSP/)
