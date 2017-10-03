@@ -75,4 +75,21 @@ mod test{
         assert_eq!(parse_Directive("sandbox").unwrap(),
             Directive::Sandbox);
     }
+    #[test]
+    fn parse_directive_set() {
+        let d = parse_DirectiveSet("script-src https: 'self'; child-src 'none'; sandbox").unwrap();
+        assert_eq!(d.script_src, Some(vec![Source::Scheme("https"), Source::Self_]));
+        assert_eq!(d.child_src, Some(vec![]));
+        assert_eq!(d.img_src, None);
+        assert!(d.sandbox);
+    }
+    #[test]
+    fn parse_directive_set_precedence() {
+        let d = parse_DirectiveSet("script-src https: 'self'; script-src 'none'").unwrap();
+        assert_eq!(d.script_src, Some(vec![Source::Scheme("https"), Source::Self_]));
+        assert!(!d.sandbox);
+        let d = parse_DirectiveSet("script-src 'none'; script-src https: 'self'").unwrap();
+        assert_eq!(d.script_src, Some(vec![]));
+        assert!(!d.sandbox);
+    }
 }

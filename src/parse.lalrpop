@@ -2,6 +2,16 @@ use types;
 
 grammar;
 
+// https://www.w3.org/TR/CSP/#parse-serialized-policy
+pub DirectiveSet: types::DirectiveSet<'input> = {
+  "" => types::DirectiveSet::new(),
+  Directive => types::DirectiveSet::with(<>),
+  <Directive> ";" => types::DirectiveSet::with(<>),
+  // Iterating backwards over the set is a simple way to implement the
+  // "first-directive-wins" behavior that the spec mandates.
+  <d:Directive> ";" <s:DirectiveSet> => {let mut s = s; s.add_directive(d); s},
+};
+
 // https://www.w3.org/TR/CSP/#csp-directives
 pub Directive: types::Directive<'input> = {
   "child-src" <SourceExpressionList> => types::Directive::ChildSrc(<>),
@@ -53,13 +63,3 @@ Scheme = r"[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)*";
 
 MediaTypeList = MediaType+;
 MediaType = r"[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)+/[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)+";
-
-// https://html.spec.whatwg.org/multipage/infrastructure.html#split-a-string-on-commas
-// https://html.spec.whatwg.org/multipage/infrastructure.html#strictly-split
-// Note that, because the CSP specification always trims whitespace,
-// we do not bother to separately implement strictly splitting.
-Split<S, T>: Vec<T> = <v:(<T> S)*> <e:T?> => {
-  let mut v = v;
-  if let Some(e) = e { v.push(e) };
-  v
-};
