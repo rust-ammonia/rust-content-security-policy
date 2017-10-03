@@ -2,6 +2,32 @@ use types;
 
 grammar;
 
+// https://www.w3.org/TR/CSP/#csp-directives
+pub Directive: types::Directive<'input> = {
+  "child-src" <SourceExpressionList> => types::Directive::ChildSrc(<>),
+  "connect-src" <SourceExpressionList> => types::Directive::ConnectSrc(<>),
+  "default-src" <SourceExpressionList> => types::Directive::DefaultSrc(<>),
+  "font-src" <SourceExpressionList> => types::Directive::FontSrc(<>),
+  "frame-src" <SourceExpressionList> => types::Directive::FrameSrc(<>),
+  "img-src" <SourceExpressionList> => types::Directive::ImgSrc(<>),
+  "manifest-src" <SourceExpressionList> => types::Directive::ManifestSrc(<>),
+  "media-src" <SourceExpressionList> => types::Directive::MediaSrc(<>),
+  "object-src" <SourceExpressionList> => types::Directive::ObjectSrc(<>),
+  "script-src" <SourceExpressionList> => types::Directive::ScriptSrc(<>),
+  "style-src" <SourceExpressionList> => types::Directive::StyleSrc(<>),
+  "worker-src" <SourceExpressionList> => types::Directive::WorkerSrc(<>),
+  "base-uri" <SourceExpressionList> => types::Directive::BaseUri(<>),
+  "plugin-types" <MediaTypeList> => types::Directive::PluginTypes(<>),
+  "sandbox" Scheme* => types::Directive::Sandbox,
+};
+
+// https://www.w3.org/TR/CSP/#grammardef-serialized-source-list
+
+pub SourceExpressionList: Vec<types::Source<'input>> = {
+  <SourceExpression+>,
+  "'none'" => Vec::new(),
+};
+
 // https://www.w3.org/TR/CSP/#framework-directive-source-list
 
 pub SourceExpression: types::Source<'input> = {
@@ -22,3 +48,18 @@ KeywordSource: types::Source<'input> = {
 // https://tools.ietf.org/html/rfc3986#section-3.1
 
 Scheme = r"[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)*";
+
+// https://www.w3.org/TR/CSP/#grammardef-media-type-list
+
+MediaTypeList = MediaType+;
+MediaType = r"[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)+/[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)+";
+
+// https://html.spec.whatwg.org/multipage/infrastructure.html#split-a-string-on-commas
+// https://html.spec.whatwg.org/multipage/infrastructure.html#strictly-split
+// Note that, because the CSP specification always trims whitespace,
+// we do not bother to separately implement strictly splitting.
+Split<S, T>: Vec<T> = <v:(<T> S)*> <e:T?> => {
+  let mut v = v;
+  if let Some(e) = e { v.push(e) };
+  v
+};
