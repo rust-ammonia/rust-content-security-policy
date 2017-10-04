@@ -15,7 +15,7 @@ mod __parse__SourceExpression {
         Term_22_5c_27unsafe_2deval_5c_27_22(&'input str),
         Term_22_5c_27unsafe_2dhashed_2dattributes_5c_27_22(&'input str),
         Term_22_5c_27unsafe_2dinline_5c_27_22(&'input str),
-        Termr_23_22_28_5ba_2dzA_2dZ_5d_28_5ba_2dzA_2dZ_5d_7c_5b0_2d9_5d_7c_5c_5c_2b_7c_5c_5c_2d_7c_5c_5c_2e_29_2a_3a_2f_2f_29_3f_28_5c_5c_2a_5c_5c_2e_29_3f_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_28_5c_5c_2e_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_29_2a_28_3a_5c_5c_2a_7c_3a_5b0_2d9_5d_2b_29_3f_28_2f_5ba_2dzA_2dZ0_2d9_5c_5c_2d_5c_5c_2e___7e_5d_2a_29_2a_22_23(&'input str),
+        Termr_23_22_28_5ba_2dzA_2dZ_5d_28_5ba_2dzA_2dZ_5d_7c_5b0_2d9_5d_7c_5c_5c_2b_7c_5c_5c_2d_7c_5c_5c_2e_29_2a_3a_2f_2f_29_3f_28_5c_5c_2a_5c_5c_2e_29_3f_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_28_5c_5c_2e_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_29_2a_28_3a_5c_5c_2a_7c_3a_5b0_2d9_5d_2b_29_3f_28_2f_28_5ba_2dzA_2dZ0_2d9_5c_5c_2d_5c_5c_2e___7e_5d_7c_25_5b0_2d9a_2dfA_2dF_5d_5b0_2d9a_2dfA_2dF_5d_29_2a_29_2a_22_23(&'input str),
         Termr_23_22_5ba_2dzA_2dZ_5d_28_5ba_2dzA_2dZ_5d_7c_5b0_2d9_5d_7c_5c_5c_2b_7c_5c_5c_2d_7c_5c_5c_2e_29_2a_3a_22_23(&'input str),
         NtHostSource(types::Source<'input>),
         NtKeywordSource(types::Source<'input>),
@@ -96,7 +96,7 @@ mod __parse__SourceExpression {
             r###""\'unsafe-eval\'""###,
             r###""\'unsafe-hashed-attributes\'""###,
             r###""\'unsafe-inline\'""###,
-            r###"r#"([a-zA-Z]([a-zA-Z]|[0-9]|\\+|\\-|\\.)*://)?(\\*\\.)?[a-zA-Z0-9\\-_]+(\\.[a-zA-Z0-9\\-_]+)*(:\\*|:[0-9]+)?(/[a-zA-Z0-9\\-\\._~]*)*"#"###,
+            r###"r#"([a-zA-Z]([a-zA-Z]|[0-9]|\\+|\\-|\\.)*://)?(\\*\\.)?[a-zA-Z0-9\\-_]+(\\.[a-zA-Z0-9\\-_]+)*(:\\*|:[0-9]+)?(/([a-zA-Z0-9\\-\\._~]|%[0-9a-fA-F][0-9a-fA-F])*)*"#"###,
             r###"r#"[a-zA-Z]([a-zA-Z]|[0-9]|\\+|\\-|\\.)*:"#"###,
         ];
         __ACTION[(__state * 7)..].iter().zip(__TERMINAL).filter_map(|(&state, terminal)| {
@@ -169,7 +169,7 @@ mod __parse__SourceExpression {
                             _ => unreachable!(),
                         },
                         5 => match __lookahead.1 {
-                            (0, __tok0) => __Symbol::Termr_23_22_28_5ba_2dzA_2dZ_5d_28_5ba_2dzA_2dZ_5d_7c_5b0_2d9_5d_7c_5c_5c_2b_7c_5c_5c_2d_7c_5c_5c_2e_29_2a_3a_2f_2f_29_3f_28_5c_5c_2a_5c_5c_2e_29_3f_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_28_5c_5c_2e_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_29_2a_28_3a_5c_5c_2a_7c_3a_5b0_2d9_5d_2b_29_3f_28_2f_5ba_2dzA_2dZ0_2d9_5c_5c_2d_5c_5c_2e___7e_5d_2a_29_2a_22_23((__tok0)),
+                            (0, __tok0) => __Symbol::Termr_23_22_28_5ba_2dzA_2dZ_5d_28_5ba_2dzA_2dZ_5d_7c_5b0_2d9_5d_7c_5c_5c_2b_7c_5c_5c_2d_7c_5c_5c_2e_29_2a_3a_2f_2f_29_3f_28_5c_5c_2a_5c_5c_2e_29_3f_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_28_5c_5c_2e_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_29_2a_28_3a_5c_5c_2a_7c_3a_5b0_2d9_5d_2b_29_3f_28_2f_28_5ba_2dzA_2dZ0_2d9_5c_5c_2d_5c_5c_2e___7e_5d_7c_25_5b0_2d9a_2dfA_2dF_5d_5b0_2d9a_2dfA_2dF_5d_29_2a_29_2a_22_23((__tok0)),
                             _ => unreachable!(),
                         },
                         6 => match __lookahead.1 {
@@ -225,8 +225,8 @@ mod __parse__SourceExpression {
     {
         let __nonterminal = match -__action {
             1 => {
-                // HostSource = r#"([a-zA-Z]([a-zA-Z]|[0-9]|\\+|\\-|\\.)*://)?(\\*\\.)?[a-zA-Z0-9\\-_]+(\\.[a-zA-Z0-9\\-_]+)*(:\\*|:[0-9]+)?(/[a-zA-Z0-9\\-\\._~]*)*"# => ActionFn(5);
-                let __sym0 = __pop_Termr_23_22_28_5ba_2dzA_2dZ_5d_28_5ba_2dzA_2dZ_5d_7c_5b0_2d9_5d_7c_5c_5c_2b_7c_5c_5c_2d_7c_5c_5c_2e_29_2a_3a_2f_2f_29_3f_28_5c_5c_2a_5c_5c_2e_29_3f_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_28_5c_5c_2e_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_29_2a_28_3a_5c_5c_2a_7c_3a_5b0_2d9_5d_2b_29_3f_28_2f_5ba_2dzA_2dZ0_2d9_5c_5c_2d_5c_5c_2e___7e_5d_2a_29_2a_22_23(__symbols);
+                // HostSource = r#"([a-zA-Z]([a-zA-Z]|[0-9]|\\+|\\-|\\.)*://)?(\\*\\.)?[a-zA-Z0-9\\-_]+(\\.[a-zA-Z0-9\\-_]+)*(:\\*|:[0-9]+)?(/([a-zA-Z0-9\\-\\._~]|%[0-9a-fA-F][0-9a-fA-F])*)*"# => ActionFn(5);
+                let __sym0 = __pop_Termr_23_22_28_5ba_2dzA_2dZ_5d_28_5ba_2dzA_2dZ_5d_7c_5b0_2d9_5d_7c_5c_5c_2b_7c_5c_5c_2d_7c_5c_5c_2e_29_2a_3a_2f_2f_29_3f_28_5c_5c_2a_5c_5c_2e_29_3f_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_28_5c_5c_2e_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_29_2a_28_3a_5c_5c_2a_7c_3a_5b0_2d9_5d_2b_29_3f_28_2f_28_5ba_2dzA_2dZ0_2d9_5c_5c_2d_5c_5c_2e___7e_5d_7c_25_5b0_2d9a_2dfA_2dF_5d_5b0_2d9a_2dfA_2dF_5d_29_2a_29_2a_22_23(__symbols);
                 let __start = __sym0.0.clone();
                 let __end = __sym0.2.clone();
                 let __nt = super::__action5::<>(input, __sym0);
@@ -399,13 +399,13 @@ mod __parse__SourceExpression {
             _ => panic!("symbol type mismatch")
         }
     }
-    fn __pop_Termr_23_22_28_5ba_2dzA_2dZ_5d_28_5ba_2dzA_2dZ_5d_7c_5b0_2d9_5d_7c_5c_5c_2b_7c_5c_5c_2d_7c_5c_5c_2e_29_2a_3a_2f_2f_29_3f_28_5c_5c_2a_5c_5c_2e_29_3f_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_28_5c_5c_2e_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_29_2a_28_3a_5c_5c_2a_7c_3a_5b0_2d9_5d_2b_29_3f_28_2f_5ba_2dzA_2dZ0_2d9_5c_5c_2d_5c_5c_2e___7e_5d_2a_29_2a_22_23<
+    fn __pop_Termr_23_22_28_5ba_2dzA_2dZ_5d_28_5ba_2dzA_2dZ_5d_7c_5b0_2d9_5d_7c_5c_5c_2b_7c_5c_5c_2d_7c_5c_5c_2e_29_2a_3a_2f_2f_29_3f_28_5c_5c_2a_5c_5c_2e_29_3f_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_28_5c_5c_2e_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_29_2a_28_3a_5c_5c_2a_7c_3a_5b0_2d9_5d_2b_29_3f_28_2f_28_5ba_2dzA_2dZ0_2d9_5c_5c_2d_5c_5c_2e___7e_5d_7c_25_5b0_2d9a_2dfA_2dF_5d_5b0_2d9a_2dfA_2dF_5d_29_2a_29_2a_22_23<
       'input,
     >(
         __symbols: &mut ::std::vec::Vec<(usize,__Symbol<'input>,usize)>
     ) -> (usize, &'input str, usize) {
         match __symbols.pop().unwrap() {
-            (__l, __Symbol::Termr_23_22_28_5ba_2dzA_2dZ_5d_28_5ba_2dzA_2dZ_5d_7c_5b0_2d9_5d_7c_5c_5c_2b_7c_5c_5c_2d_7c_5c_5c_2e_29_2a_3a_2f_2f_29_3f_28_5c_5c_2a_5c_5c_2e_29_3f_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_28_5c_5c_2e_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_29_2a_28_3a_5c_5c_2a_7c_3a_5b0_2d9_5d_2b_29_3f_28_2f_5ba_2dzA_2dZ0_2d9_5c_5c_2d_5c_5c_2e___7e_5d_2a_29_2a_22_23(__v), __r) => (__l, __v, __r),
+            (__l, __Symbol::Termr_23_22_28_5ba_2dzA_2dZ_5d_28_5ba_2dzA_2dZ_5d_7c_5b0_2d9_5d_7c_5c_5c_2b_7c_5c_5c_2d_7c_5c_5c_2e_29_2a_3a_2f_2f_29_3f_28_5c_5c_2a_5c_5c_2e_29_3f_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_28_5c_5c_2e_5ba_2dzA_2dZ0_2d9_5c_5c_2d___5d_2b_29_2a_28_3a_5c_5c_2a_7c_3a_5b0_2d9_5d_2b_29_3f_28_2f_28_5ba_2dzA_2dZ0_2d9_5c_5c_2d_5c_5c_2e___7e_5d_7c_25_5b0_2d9a_2dfA_2dF_5d_5b0_2d9a_2dfA_2dF_5d_29_2a_29_2a_22_23(__v), __r) => (__l, __v, __r),
             _ => panic!("symbol type mismatch")
         }
     }
@@ -487,7 +487,7 @@ mod __intern_token {
     impl<'input> __Matcher<'input> {
         pub fn new(s: &'input str) -> __Matcher<'input> {
             let __strs: &[&str] = &[
-                "^((?u:[A-Za-z])((?u:[A-Za-z])|(?u:[0-9])|(?u:\\+)|(?u:\\-)|(?u:\\.))*(?u:://))?((?u:\\*\\.))?(?u:[-0-9A-Z_-_a-z])+((?u:\\.)(?u:[-0-9A-Z_-_a-z])+)*((?u::\\*)|(?u::)(?u:[0-9])+)?((?u:/)(?u:[-\\.-\\.0-9A-Z_-_a-z\\~-\\~])*)*",
+                "^((?u:[A-Za-z])((?u:[A-Za-z])|(?u:[0-9])|(?u:\\+)|(?u:\\-)|(?u:\\.))*(?u:://))?((?u:\\*\\.))?(?u:[-0-9A-Z_-_a-z])+((?u:\\.)(?u:[-0-9A-Z_-_a-z])+)*((?u::\\*)|(?u::)(?u:[0-9])+)?((?u:/)((?u:[-\\.-\\.0-9A-Z_-_a-z\\~-\\~])|(?u:%)(?u:[0-9A-Fa-f])(?u:[0-9A-Fa-f]))*)*",
                 "^(?u:[A-Za-z])((?u:[A-Za-z])|(?u:[0-9])|(?u:\\+)|(?u:\\-)|(?u:\\.))*(?u::)",
                 "^(?u:\'self\')",
                 "^(?u:\'strict\\-dynamic\')",
@@ -497,7 +497,7 @@ mod __intern_token {
             ];
             let __regex_set = __regex::RegexSet::new(__strs).unwrap();
             let __regex_vec = vec![
-                __regex::Regex::new("^((?u:[A-Za-z])((?u:[A-Za-z])|(?u:[0-9])|(?u:\\+)|(?u:\\-)|(?u:\\.))*(?u:://))?((?u:\\*\\.))?(?u:[-0-9A-Z_-_a-z])+((?u:\\.)(?u:[-0-9A-Z_-_a-z])+)*((?u::\\*)|(?u::)(?u:[0-9])+)?((?u:/)(?u:[-\\.-\\.0-9A-Z_-_a-z\\~-\\~])*)*").unwrap(),
+                __regex::Regex::new("^((?u:[A-Za-z])((?u:[A-Za-z])|(?u:[0-9])|(?u:\\+)|(?u:\\-)|(?u:\\.))*(?u:://))?((?u:\\*\\.))?(?u:[-0-9A-Z_-_a-z])+((?u:\\.)(?u:[-0-9A-Z_-_a-z])+)*((?u::\\*)|(?u::)(?u:[0-9])+)?((?u:/)((?u:[-\\.-\\.0-9A-Z_-_a-z\\~-\\~])|(?u:%)(?u:[0-9A-Fa-f])(?u:[0-9A-Fa-f]))*)*").unwrap(),
                 __regex::Regex::new("^(?u:[A-Za-z])((?u:[A-Za-z])|(?u:[0-9])|(?u:\\+)|(?u:\\-)|(?u:\\.))*(?u::)").unwrap(),
                 __regex::Regex::new("^(?u:\'self\')").unwrap(),
                 __regex::Regex::new("^(?u:\'strict\\-dynamic\')").unwrap(),

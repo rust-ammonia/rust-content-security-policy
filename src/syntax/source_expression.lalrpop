@@ -19,7 +19,7 @@ SchemeSource: types::Source<'input> = r"[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)*:"
 // but does not allow query strings (as in http://example.com?query=string),
 // and allows bare domain names (as in example.com) and weird wildcard things.
 HostSource: types::Source<'input> =
-  r"([a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)*://)?(\*\.)?[a-zA-Z0-9\-_]+(\.[a-zA-Z0-9\-_]+)*(:\*|:[0-9]+)?(/[a-zA-Z0-9\-\._~]*)*"
+  r"([a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)*://)?(\*\.)?[a-zA-Z0-9\-_]+(\.[a-zA-Z0-9\-_]+)*(:\*|:[0-9]+)?(/([a-zA-Z0-9\-\._~]|%[0-9a-fA-F][0-9a-fA-F])*)*"
     => types::Source::Host(<>);
 
 KeywordSource: types::Source<'input> = {

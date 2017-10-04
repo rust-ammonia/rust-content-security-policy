@@ -97,4 +97,9 @@ mod test{
         let h10 = Source::Host("*.google.com:*");
         assert_eq!(d.script_src, Some(vec![h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, Source::Self_]))
     }
+    #[test]
+    fn parse_url_directive_percent_encoded() {
+        let d = parse_DirectiveSet("script-src notriddle.com/%20/").unwrap();
+        assert_eq!(d.script_src, Some(vec![Source::Host("notriddle.com/%20/")]))
+    }
 }
