@@ -1,4 +1,6 @@
-use types;
+use syntax::media_type;
+use syntax::source_expression;
+use syntax::types;
 
 grammar;
 
@@ -27,8 +29,8 @@ pub Directive: types::Directive<'input> = {
   "style-src" <SourceExpressionList> => types::Directive::StyleSrc(<>),
   "worker-src" <SourceExpressionList> => types::Directive::WorkerSrc(<>),
   "base-uri" <SourceExpressionList> => types::Directive::BaseUri(<>),
-  "plugin-types" <MediaTypeList> => types::Directive::PluginTypes(<>),
-  "sandbox" Scheme* => types::Directive::Sandbox,
+  "plugin-types" <MediaType+> => types::Directive::PluginTypes(<>),
+  "sandbox" r"[^\s;]+"* => types::Directive::Sandbox,
 };
 
 // https://www.w3.org/TR/CSP/#grammardef-serialized-source-list
@@ -38,28 +40,8 @@ pub SourceExpressionList: Vec<types::Source<'input>> = {
   "'none'" => Vec::new(),
 };
 
-// https://www.w3.org/TR/CSP/#framework-directive-source-list
+SourceExpression: types::Source<'input> = r"[^\s;]+"
+  =>? source_expression::parse_SourceExpression(<>);
 
-pub SourceExpression: types::Source<'input> = {
-  SchemeSource,
-  KeywordSource,
-};
-
-SchemeSource: types::Source<'input> = <Scheme> ":" => types::Source::Scheme(<>);
-
-KeywordSource: types::Source<'input> = {
-  "'self'" => types::Source::Self_,
-  "'unsafe-inline'" => types::Source::UnsafeInline,
-  "'unsafe-eval'" => types::Source::UnsafeEval,
-  "'strict-dynamic'" => types::Source::StrictDynamic,
-  "'unsafe-hashed-attributes'" => types::Source::UnsafeHashedAttributes,
-};
-
-// https://tools.ietf.org/html/rfc3986#section-3.1
-
-Scheme = r"[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)*";
-
-// https://www.w3.org/TR/CSP/#grammardef-media-type-list
-
-MediaTypeList = MediaType+;
-MediaType = r"[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)+/[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)+";
+MediaType: &'input str = r"[^\s;]+"
+  =>? media_type::parse_MediaType(<>);

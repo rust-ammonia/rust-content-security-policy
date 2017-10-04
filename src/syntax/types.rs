@@ -87,9 +87,16 @@ pub enum Directive<'a> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Source<'a> {
   Scheme(&'a str),
+  Host(&'a str),
   Self_,
   UnsafeInline,
   UnsafeEval,
   StrictDynamic,
   UnsafeHashedAttributes,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Port {
+  Any,
+  Number(u64),
 }

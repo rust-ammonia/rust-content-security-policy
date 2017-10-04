@@ -1,0 +1,31 @@
+use syntax::types;
+use std::str::FromStr;
+
+grammar;
+
+// https://www.w3.org/TR/CSP/#framework-directive-source-list
+
+pub SourceExpression: types::Source<'input> = {
+  SchemeSource,
+  KeywordSource,
+  HostSource,
+};
+
+SchemeSource: types::Source<'input> = r"[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)*:"
+  => types::Source::Scheme(&<>[..<>.len()-1]);
+
+// Just as a reminder, this is not a regex for matching URLs.
+// The CSP specification defines a URL-like representation for "host sources",
+// but does not allow query strings (as in http://example.com?query=string),
+// and allows bare domain names (as in example.com) and weird wildcard things.
+HostSource: types::Source<'input> =
+  r"([a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)*://)?(\*\.)?[a-zA-Z0-9\-_]+(\.[a-zA-Z0-9\-_]+)*(:\*|:[0-9]+)?(/[a-zA-Z0-9\-\._~]*)*"
+    => types::Source::Host(<>);
+
+KeywordSource: types::Source<'input> = {
+  "'self'" => types::Source::Self_,
+  "'unsafe-inline'" => types::Source::UnsafeInline,
+  "'unsafe-eval'" => types::Source::UnsafeEval,
+  "'strict-dynamic'" => types::Source::StrictDynamic,
+  "'unsafe-hashed-attributes'" => types::Source::UnsafeHashedAttributes,
+};

@@ -1,0 +1,5 @@
+grammar;
+
+// https://www.w3.org/TR/CSP/#grammardef-media-type-list
+
+pub MediaType = r"[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)+/[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)+";
