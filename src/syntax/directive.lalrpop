@@ -4,6 +4,14 @@ use syntax::types;
 
 grammar;
 
+pub DirectiveSetList: Vec<types::DirectiveSet<'input>> = {
+  <l:(<DirectiveSet> ",")*> <s:DirectiveSet?> => {
+    let mut l = l;
+    if let Some(s) = s { l.push(s) };
+    l
+  },
+};
+
 // https://www.w3.org/TR/CSP/#parse-serialized-policy
 pub DirectiveSet: types::DirectiveSet<'input> = {
   "" => types::DirectiveSet::new(),
@@ -30,12 +38,12 @@ pub Directive: types::Directive<'input> = {
   "worker-src" <SourceExpressionList> => types::Directive::WorkerSrc(<>),
   "base-uri" <SourceExpressionList> => types::Directive::BaseUri(<>),
   "plugin-types" <MediaType+> => types::Directive::PluginTypes(<>),
-  "sandbox" r"[^\s;]+"* => types::Directive::Sandbox,
-  "disown-opener" r"[^\s;]+"* => types::Directive::DisownOpener,
+  "sandbox" Token* => types::Directive::Sandbox,
+  "disown-opener" Token* => types::Directive::DisownOpener,
   "form-action" <SourceExpressionList> => types::Directive::FormAction(<>),
   "frame-ancestors" <AncestorSourceList> => types::Directive::FrameAncestors(<>),
-  "report-uri" <r"[^\s;]+"+> => types::Directive::ReportUri(<>),
-  "report-to" <r"[^\s;]+"> => types::Directive::ReportTo(<>),
+  "report-uri" <Token+> => types::Directive::ReportUri(<>),
+  "report-to" <Token> => types::Directive::ReportTo(<>),
 };
 
 // https://www.w3.org/TR/CSP/#grammardef-serialized-source-list
@@ -45,16 +53,18 @@ pub SourceExpressionList: Vec<types::Source<'input>> = {
   "'none'" => Vec::new(),
 };
 
+SourceExpression: types::Source<'input> = Token
+  =>? source_expression::parse_SourceExpression(<>);
+
 pub AncestorSourceList: Vec<types::Ancestor<'input>> = {
   <AncestorSource+>,
   "'none'" => Vec::new(),
 };
 
-SourceExpression: types::Source<'input> = r"[^\s;]+"
-  =>? source_expression::parse_SourceExpression(<>);
-
-AncestorSource: types::Ancestor<'input> = r"[^\s;]+"
+AncestorSource: types::Ancestor<'input> = Token
   =>? source_expression::parse_AncestorSource(<>);
 
-MediaType: &'input str = r"[^\s;]+"
+MediaType: &'input str = Token
   =>? media_type::parse_MediaType(<>);
+
+Token = r"[^\s;,]+";

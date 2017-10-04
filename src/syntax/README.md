@@ -1,6 +1,8 @@
 Parse the Content-Security-Policy directive syntax
 ==================================================
 
+Built with <https://github.com/nikomatsakis/lalrpop>.
+
 What this parser does:
 
 * converts from the textual syntax to a struct of slices into the original buffer

@@ -143,4 +143,28 @@ mod test{
         assert!(parse_SourceExpression("'sha512-123==='").is_err());
         assert!(parse_SourceExpression("'sha512-123''").is_err());
     }
+    #[test]
+    fn parse_directive_set_list_empty() {
+        assert_eq!(parse_DirectiveSetList("").unwrap(), vec![]);
+    }
+    #[test]
+    fn parse_directive_set_list_one() {
+        let l = parse_DirectiveSetList("script-src 'self'").unwrap();
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].script_src, Some(vec![Source::Self_]));
+        let l = parse_DirectiveSetList("script-src 'self',").unwrap();
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].script_src, Some(vec![Source::Self_]));
+    }
+    #[test]
+    fn parse_directive_set_list_two() {
+        let l = parse_DirectiveSetList("script-src 'self', script-src 'none'").unwrap();
+        assert_eq!(l.len(), 2);
+        assert_eq!(l[0].script_src, Some(vec![Source::Self_]));
+        assert_eq!(l[1].script_src, Some(vec![]));
+        let l = parse_DirectiveSetList("script-src 'self', script-src 'none',").unwrap();
+        assert_eq!(l.len(), 2);
+        assert_eq!(l[0].script_src, Some(vec![Source::Self_]));
+        assert_eq!(l[1].script_src, Some(vec![]));
+    }
 }
