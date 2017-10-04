@@ -15,6 +15,8 @@ pub struct DirectiveSet<'a> {
   pub base_uri: Option<Vec<Source<'a>>>,
   pub plugin_types: Option<Vec<&'a str>>,
   pub sandbox: bool,
+  pub disown_opener: bool,
+  pub form_action: Option<Vec<Source<'a>>>,
 }
 
 impl<'a> DirectiveSet<'a> {
@@ -35,6 +37,8 @@ impl<'a> DirectiveSet<'a> {
       base_uri: None,
       plugin_types: None,
       sandbox: false,
+      disown_opener: false,
+      form_action: None,
     }
   }
 
@@ -61,6 +65,8 @@ impl<'a> DirectiveSet<'a> {
       Directive::BaseUri(x) => self.base_uri = Some(x),
       Directive::PluginTypes(x) => self.plugin_types = Some(x),
       Directive::Sandbox => self.sandbox = true,
+      Directive::DisownOpener => self.disown_opener = true,
+      Directive::FormAction(x) => self.form_action = Some(x),
     }
   }
 }
@@ -82,6 +88,8 @@ pub enum Directive<'a> {
   BaseUri(Vec<Source<'a>>),
   PluginTypes(Vec<&'a str>),
   Sandbox,
+  DisownOpener,
+  FormAction(Vec<Source<'a>>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

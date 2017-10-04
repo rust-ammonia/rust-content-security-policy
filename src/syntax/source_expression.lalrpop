@@ -9,7 +9,15 @@ pub SourceExpression: types::Source<'input> = {
   SchemeSource,
   KeywordSource,
   HostSource,
+  //NonceSource,
+  //HashSource,
 };
+
+//pub AncestorSource: types::Source<'input> = {
+  //SchemeSource,
+  //HostSource,
+  //"'self'" => types::Source::Self_,
+//}
 
 SchemeSource: types::Source<'input> = r"[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)*:"
   => types::Source::Scheme(&<>[..<>.len()-1]);

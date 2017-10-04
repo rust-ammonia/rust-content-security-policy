@@ -31,6 +31,8 @@ pub Directive: types::Directive<'input> = {
   "base-uri" <SourceExpressionList> => types::Directive::BaseUri(<>),
   "plugin-types" <MediaType+> => types::Directive::PluginTypes(<>),
   "sandbox" r"[^\s;]+"* => types::Directive::Sandbox,
+  "disown-opener" r"[^\s;]+"* => types::Directive::DisownOpener,
+  "form-action" <SourceExpressionList> => types::Directive::FormAction(<>),
 };
 
 // https://www.w3.org/TR/CSP/#grammardef-serialized-source-list

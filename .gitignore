@@ -1,3 +1,6 @@
 target/
 **/*.rs.bk
 Cargo.lock
+src/syntax/directive.rs
+src/syntax/source_expressions.rs
+src/syntax/media_type.rs

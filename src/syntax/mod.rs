@@ -102,4 +102,19 @@ mod test{
         let d = parse_DirectiveSet("script-src notriddle.com/%20/").unwrap();
         assert_eq!(d.script_src, Some(vec![Source::Host("notriddle.com/%20/")]))
     }
+    #[test]
+    fn parse_form_action() {
+        let d = parse_DirectiveSet("form-action notriddle.com/%20/").unwrap();
+        assert_eq!(d.form_action, Some(vec![Source::Host("notriddle.com/%20/")]))
+    }
+    #[test]
+    fn parse_no_disown_opener() {
+        let d = parse_DirectiveSet("form-action notriddle.com/%20/").unwrap();
+        assert!(!d.disown_opener);
+    }
+    #[test]
+    fn parse_disown_opener() {
+        let d = parse_DirectiveSet("disown-opener;form-action notriddle.com/%20/").unwrap();
+        assert!(d.disown_opener);
+    }
 }
