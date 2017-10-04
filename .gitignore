@@ -2,5 +2,5 @@ target/
 **/*.rs.bk
 Cargo.lock
 src/syntax/directive.rs
-src/syntax/source_expressions.rs
+src/syntax/source_expression.rs
 src/syntax/media_type.rs

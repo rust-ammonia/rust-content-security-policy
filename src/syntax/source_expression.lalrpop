@@ -6,34 +6,30 @@ grammar;
 // https://www.w3.org/TR/CSP/#framework-directive-source-list
 
 pub SourceExpression: types::Source<'input> = {
-  SchemeSource,
-  KeywordSource,
-  HostSource,
+  Scheme => types::Source::Scheme(<>),
+  Host => types::Source::Host(<>),
   //NonceSource,
   //HashSource,
-};
-
-//pub AncestorSource: types::Source<'input> = {
-  //SchemeSource,
-  //HostSource,
-  //"'self'" => types::Source::Self_,
-//}
-
-SchemeSource: types::Source<'input> = r"[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)*:"
-  => types::Source::Scheme(&<>[..<>.len()-1]);
-
-// Just as a reminder, this is not a regex for matching URLs.
-// The CSP specification defines a URL-like representation for "host sources",
-// but does not allow query strings (as in http://example.com?query=string),
-// and allows bare domain names (as in example.com) and weird wildcard things.
-HostSource: types::Source<'input> =
-  r"([a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)*://)?(\*\.)?[a-zA-Z0-9\-_]+(\.[a-zA-Z0-9\-_]+)*(:\*|:[0-9]+)?(/([a-zA-Z0-9\-\._~]|%[0-9a-fA-F][0-9a-fA-F])*)*"
-    => types::Source::Host(<>);
-
-KeywordSource: types::Source<'input> = {
   "'self'" => types::Source::Self_,
   "'unsafe-inline'" => types::Source::UnsafeInline,
   "'unsafe-eval'" => types::Source::UnsafeEval,
   "'strict-dynamic'" => types::Source::StrictDynamic,
   "'unsafe-hashed-attributes'" => types::Source::UnsafeHashedAttributes,
 };
+
+pub AncestorSource: types::Ancestor<'input> = {
+  Scheme => types::Ancestor::Scheme(<>),
+  Host => types::Ancestor::Host(<>),
+  "'self'" => types::Ancestor::Self_,
+};
+
+Scheme: &'input str = r"[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)*:"
+  => &<>[..<>.len()-1];
+
+// Just as a reminder, this is not a regex for matching URLs.
+// The CSP specification defines a URL-like representation for "host sources",
+// but does not allow query strings (as in http://example.com?query=string),
+// and allows bare domain names (as in example.com) and weird wildcard things.
+Host: &'input str =
+  r"([a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)*://)?(\*\.)?[a-zA-Z0-9\-_]+(\.[a-zA-Z0-9\-_]+)*(:\*|:[0-9]+)?(/([a-zA-Z0-9\-\._~]|%[0-9a-fA-F][0-9a-fA-F])*)*"
+    => <>;

@@ -17,6 +17,7 @@ pub struct DirectiveSet<'a> {
   pub sandbox: bool,
   pub disown_opener: bool,
   pub form_action: Option<Vec<Source<'a>>>,
+  pub frame_ancestors: Option<Vec<Ancestor<'a>>>,
 }
 
 impl<'a> DirectiveSet<'a> {
@@ -39,6 +40,7 @@ impl<'a> DirectiveSet<'a> {
       sandbox: false,
       disown_opener: false,
       form_action: None,
+      frame_ancestors: None,
     }
   }
 
@@ -67,6 +69,7 @@ impl<'a> DirectiveSet<'a> {
       Directive::Sandbox => self.sandbox = true,
       Directive::DisownOpener => self.disown_opener = true,
       Directive::FormAction(x) => self.form_action = Some(x),
+      Directive::FrameAncestors(x) => self.frame_ancestors = Some(x),
     }
   }
 }
@@ -90,6 +93,7 @@ pub enum Directive<'a> {
   Sandbox,
   DisownOpener,
   FormAction(Vec<Source<'a>>),
+  FrameAncestors(Vec<Ancestor<'a>>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -101,6 +105,13 @@ pub enum Source<'a> {
   UnsafeEval,
   StrictDynamic,
   UnsafeHashedAttributes,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Ancestor<'a> {
+  Scheme(&'a str),
+  Host(&'a str),
+  Self_,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

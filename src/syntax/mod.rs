@@ -6,7 +6,6 @@ mod types;
 #[cfg(test)]
 mod test{
     use super::directive::*;
-    use super::media_type::*;
     use super::source_expression::*;
     use super::types::*;
     #[test]
@@ -116,5 +115,15 @@ mod test{
     fn parse_disown_opener() {
         let d = parse_DirectiveSet("disown-opener;form-action notriddle.com/%20/").unwrap();
         assert!(d.disown_opener);
+    }
+    #[test]
+    fn parse_ancestor_source() {
+        assert_eq!(parse_AncestorSource("'self'").unwrap(), Ancestor::Self_);
+        assert!(parse_AncestorSource("'unsafe-inline'").is_err());
+    }
+    #[test]
+    fn parse_frame_ancestors() {
+        let d = parse_DirectiveSet("frame-ancestors notriddle.com/%20/").unwrap();
+        assert_eq!(d.frame_ancestors, Some(vec![Ancestor::Host("notriddle.com/%20/")]))
     }
 }

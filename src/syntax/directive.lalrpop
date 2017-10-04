@@ -33,6 +33,7 @@ pub Directive: types::Directive<'input> = {
   "sandbox" r"[^\s;]+"* => types::Directive::Sandbox,
   "disown-opener" r"[^\s;]+"* => types::Directive::DisownOpener,
   "form-action" <SourceExpressionList> => types::Directive::FormAction(<>),
+  "frame-ancestors" <AncestorSourceList> => types::Directive::FrameAncestors(<>),
 };
 
 // https://www.w3.org/TR/CSP/#grammardef-serialized-source-list
@@ -42,8 +43,16 @@ pub SourceExpressionList: Vec<types::Source<'input>> = {
   "'none'" => Vec::new(),
 };
 
+pub AncestorSourceList: Vec<types::Ancestor<'input>> = {
+  <AncestorSource+>,
+  "'none'" => Vec::new(),
+};
+
 SourceExpression: types::Source<'input> = r"[^\s;]+"
   =>? source_expression::parse_SourceExpression(<>);
+
+AncestorSource: types::Ancestor<'input> = r"[^\s;]+"
+  =>? source_expression::parse_AncestorSource(<>);
 
 MediaType: &'input str = r"[^\s;]+"
   =>? media_type::parse_MediaType(<>);
