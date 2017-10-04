@@ -8,8 +8,10 @@ grammar;
 pub SourceExpression: types::Source<'input> = {
   Scheme => types::Source::Scheme(<>),
   Host => types::Source::Host(<>),
-  //NonceSource,
-  //HashSource,
+  Nonce => types::Source::Nonce(<>),
+  Sha256 => types::Source::Sha256(<>),
+  Sha384 => types::Source::Sha384(<>),
+  Sha512 => types::Source::Sha512(<>),
   "'self'" => types::Source::Self_,
   "'unsafe-inline'" => types::Source::UnsafeInline,
   "'unsafe-eval'" => types::Source::UnsafeEval,
@@ -22,6 +24,18 @@ pub AncestorSource: types::Ancestor<'input> = {
   Host => types::Ancestor::Host(<>),
   "'self'" => types::Ancestor::Self_,
 };
+
+Nonce: &'input str = r"'nonce\-[a-zA-Z0-9\+/\-_]+=?=?'"
+  => &<>[7..<>.len()-1];
+
+Sha256: &'input str = r"'sha256\-[a-zA-Z0-9\+/\-_]+=?=?'"
+  => &<>[8..<>.len()-1];
+
+Sha384: &'input str = r"'sha384\-[a-zA-Z0-9\+/\-_]+=?=?'"
+  => &<>[8..<>.len()-1];
+
+Sha512: &'input str = r"'sha512\-[a-zA-Z0-9\+/\-_]+=?=?'"
+  => &<>[8..<>.len()-1];
 
 Scheme: &'input str = r"[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)*:"
   => &<>[..<>.len()-1];

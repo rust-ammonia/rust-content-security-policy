@@ -108,6 +108,10 @@ pub enum Directive<'a> {
 pub enum Source<'a> {
   Scheme(&'a str),
   Host(&'a str),
+  Nonce(&'a str),
+  Sha256(&'a str),
+  Sha384(&'a str),
+  Sha512(&'a str),
   Self_,
   UnsafeInline,
   UnsafeEval,

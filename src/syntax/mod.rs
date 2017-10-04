@@ -132,4 +132,15 @@ mod test{
         assert_eq!(d.report_to, Some("notriddle"));
         assert_eq!(d.report_uri, Some(vec!["http://notriddle.com", "http://google.com"]));
     }
+    #[test]
+    fn parse_nonce_source_expression() {
+        assert_eq!(parse_SourceExpression("'nonce-123'").unwrap(), Source::Nonce("123"));
+        assert_eq!(parse_SourceExpression("'sha256-123'").unwrap(), Source::Sha256("123"));
+        assert_eq!(parse_SourceExpression("'sha384-123'").unwrap(), Source::Sha384("123"));
+        assert_eq!(parse_SourceExpression("'sha512-123'").unwrap(), Source::Sha512("123"));
+        assert_eq!(parse_SourceExpression("'sha512-123='").unwrap(), Source::Sha512("123="));
+        assert_eq!(parse_SourceExpression("'sha512-123=='").unwrap(), Source::Sha512("123=="));
+        assert!(parse_SourceExpression("'sha512-123==='").is_err());
+        assert!(parse_SourceExpression("'sha512-123''").is_err());
+    }
 }
