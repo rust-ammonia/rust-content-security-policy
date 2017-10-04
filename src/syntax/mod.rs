@@ -126,4 +126,10 @@ mod test{
         let d = parse_DirectiveSet("frame-ancestors notriddle.com/%20/").unwrap();
         assert_eq!(d.frame_ancestors, Some(vec![Ancestor::Host("notriddle.com/%20/")]))
     }
+    #[test]
+    fn parse_report() {
+        let d = parse_DirectiveSet("report-to notriddle ; report-uri http://notriddle.com http://google.com").unwrap();
+        assert_eq!(d.report_to, Some("notriddle"));
+        assert_eq!(d.report_uri, Some(vec!["http://notriddle.com", "http://google.com"]));
+    }
 }

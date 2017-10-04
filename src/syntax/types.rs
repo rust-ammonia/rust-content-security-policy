@@ -18,6 +18,8 @@ pub struct DirectiveSet<'a> {
   pub disown_opener: bool,
   pub form_action: Option<Vec<Source<'a>>>,
   pub frame_ancestors: Option<Vec<Ancestor<'a>>>,
+  pub report_uri: Option<Vec<&'a str>>,
+  pub report_to: Option<&'a str>,
 }
 
 impl<'a> DirectiveSet<'a> {
@@ -41,6 +43,8 @@ impl<'a> DirectiveSet<'a> {
       disown_opener: false,
       form_action: None,
       frame_ancestors: None,
+      report_uri: None,
+      report_to: None,
     }
   }
 
@@ -70,6 +74,8 @@ impl<'a> DirectiveSet<'a> {
       Directive::DisownOpener => self.disown_opener = true,
       Directive::FormAction(x) => self.form_action = Some(x),
       Directive::FrameAncestors(x) => self.frame_ancestors = Some(x),
+      Directive::ReportUri(x) => self.report_uri = Some(x),
+      Directive::ReportTo(x) => self.report_to = Some(x),
     }
   }
 }
@@ -94,6 +100,8 @@ pub enum Directive<'a> {
   DisownOpener,
   FormAction(Vec<Source<'a>>),
   FrameAncestors(Vec<Ancestor<'a>>),
+  ReportUri(Vec<&'a str>),
+  ReportTo(&'a str),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

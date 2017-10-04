@@ -34,6 +34,8 @@ pub Directive: types::Directive<'input> = {
   "disown-opener" r"[^\s;]+"* => types::Directive::DisownOpener,
   "form-action" <SourceExpressionList> => types::Directive::FormAction(<>),
   "frame-ancestors" <AncestorSourceList> => types::Directive::FrameAncestors(<>),
+  "report-uri" <r"[^\s;]+"+> => types::Directive::ReportUri(<>),
+  "report-to" <r"[^\s;]+"> => types::Directive::ReportTo(<>),
 };
 
 // https://www.w3.org/TR/CSP/#grammardef-serialized-source-list
