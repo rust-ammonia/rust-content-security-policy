@@ -1,7 +1,31 @@
 mod directive;
 mod media_type;
 mod source_expression;
-mod types;
+pub mod types;
+
+use std::error::Error as StdError;
+use std::fmt::{self, Display};
+
+#[derive(Clone, Debug)]
+pub struct Error {
+    _p: (),
+}
+
+impl Display for Error {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "Failed to parse content-security-policy")
+    }
+}
+
+impl StdError for Error {
+    fn description(&self) -> &'static str {
+        "Failed to parse content-security-policy"
+    }
+}
+
+pub fn parse(text: &str) -> Result<Vec<types::DirectiveSet>, Error> {
+    directive::parse_DirectiveSetList(text).map_err(|_| Error{_p: ()})
+}
 
 #[cfg(test)]
 mod test{
@@ -95,6 +119,11 @@ mod test{
         let h9 = Source::Host("google.com:*");
         let h10 = Source::Host("*.google.com:*");
         assert_eq!(d.script_src, Some(vec![h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, Source::Self_]))
+    }
+    #[test]
+    fn parse_url_directive_wildcard() {
+        let d = super::parse("script-src *").unwrap();
+        assert_eq!(d[0].script_src, Some(vec![Source::Host("*")]));
     }
     #[test]
     fn parse_url_directive_percent_encoded() {

@@ -14,8 +14,10 @@ build = "build.rs"
 lalrpop = "0.13.1"
 
 [dependencies]
+bitflags = "1.0.0"
 lalrpop-util = "0.13.1"
 regex = "0.2.2"
+url = "1.5.1"
 
 [dev-dependencies]
 version-sync = "0.3"

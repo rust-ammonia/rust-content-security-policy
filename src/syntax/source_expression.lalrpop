@@ -8,6 +8,7 @@ grammar;
 pub SourceExpression: types::Source<'input> = {
   Scheme => types::Source::Scheme(<>),
   Host => types::Source::Host(<>),
+  "*" => types::Source::Host("*"), // <- another workaround
   Nonce => types::Source::Nonce(<>),
   Sha256 => types::Source::Sha256(<>),
   Sha384 => types::Source::Sha384(<>),
