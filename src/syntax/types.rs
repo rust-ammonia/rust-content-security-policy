@@ -125,9 +125,3 @@ pub enum Ancestor<'a> {
   Host(&'a str),
   Self_,
 }
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Port {
-  Any,
-  Number(u64),
-}

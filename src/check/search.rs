@@ -60,7 +60,7 @@ pub fn find<T, F: FnMut(&T) -> Ordering>(v: &[T], mut f: F) -> Option<&T> {
 #[cfg(test)]
 mod test {
     use super::*;
-    macro_rules! do_test {
+    macro_rules! do_search_test {
         ($i:ident; $( $a:expr ),*; $( $b:expr ),*) => {
             #[test]
             fn $i() {
@@ -75,11 +75,11 @@ mod test {
             }
         }
     }
-    do_test!{zero; ; }
-    do_test!{one; 1; 1}
-    do_test!{two; 1, 2; 2, 1}
-    do_test!{three; 1, 2, 3; 2, 1, 3}
-    do_test!{four; 1, 2, 3, 4; 3, 2, 4, 1}
-    do_test!{five; 1, 2, 3, 4, 5; 4, 2, 5, 1, 3}
-    do_test!{six; 1, 2, 3, 4, 5, 6; 4, 2, 6, 1, 3, 5}
+    do_search_test!{zero; ; }
+    do_search_test!{one; 1; 1}
+    do_search_test!{two; 1, 2; 2, 1}
+    do_search_test!{three; 1, 2, 3; 2, 1, 3}
+    do_search_test!{four; 1, 2, 3, 4; 3, 2, 4, 1}
+    do_search_test!{five; 1, 2, 3, 4, 5; 4, 2, 5, 1, 3}
+    do_search_test!{six; 1, 2, 3, 4, 5, 6; 4, 2, 6, 1, 3, 5}
 }
