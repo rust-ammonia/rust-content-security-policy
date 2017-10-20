@@ -15,7 +15,9 @@ lalrpop = {git = "https://github.com/nikomatsakis/lalrpop.git"}
 
 [dependencies]
 bitflags = "1.0.0"
+if_chain = "0.1.2"
 lalrpop-util = {git = "https://github.com/nikomatsakis/lalrpop.git"}
+lazy_static = "0.2.9"
 regex = "0.2.2"
 url = "1.5.1"
 

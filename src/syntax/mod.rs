@@ -6,6 +6,39 @@ pub mod types;
 use std::error::Error as StdError;
 use std::fmt::{self, Display};
 
+pub struct Host<'a> {
+    pub scheme: Option<&'a str>,
+    pub host: &'a str,
+    pub port: Option<&'a str>,
+    pub path: Option<&'a str>,
+}
+impl<'a> Host<'a> {
+    pub fn parse(input: &'a str) -> Result<Host<'a>, Error> {
+        use regex::{Match, Regex};
+        lazy_static!{
+            static ref HOST_SOURCE_REGEX: Regex = Regex::new(
+                r"((?P<scheme>[a-zA-Z]([a-zA-Z]|[0-9]|\+|\-|\.)*)://)?(?P<host>\*|(\*\.)?[a-zA-Z0-9\-_]+(\.[a-zA-Z0-9\-_]+)*)(:(?P<port>\*|[0-9]+))?(?P<path>(/([a-zA-Z0-9\-\._~]|%[0-9a-fA-F][0-9a-fA-F])*)+)?"
+            ).expect("valid regex for host source expression");
+        }
+        if_chain! {
+            if let Some(captures) = HOST_SOURCE_REGEX.captures(input);
+            if let Some(host) = captures.name("host");
+            then {
+                Ok(Host{
+                    scheme: captures.name("scheme").as_ref().map(Match::as_str),
+                    host: host.as_str(),
+                    port: captures.name("port").as_ref().map(Match::as_str),
+                    path: captures.name("path").as_ref().map(Match::as_str),
+                })
+            } else {
+                Err(Error{
+                    _p: (),
+                })
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Error {
     _p: (),
@@ -32,6 +65,7 @@ mod test{
     use super::directive::*;
     use super::source_expression::*;
     use super::types::*;
+    use super::Host;
     #[test]
     fn parse_scheme_source() {
         assert_eq!(parse_SourceExpression("http:").unwrap(), Source::Scheme("http"));
@@ -195,5 +229,25 @@ mod test{
         assert_eq!(l.len(), 2);
         assert_eq!(l[0].script_src, Some(vec![Source::Self_]));
         assert_eq!(l[1].script_src, Some(vec![]));
+    }
+    #[test]
+    fn parse_host() {
+        let h = Host::parse("*").unwrap();
+        assert_eq!(h.host, "*");
+        assert_eq!(h.port, None);
+        let h = Host::parse("*:80").unwrap();
+        assert_eq!(h.host, "*");
+        assert_eq!(h.port, Some("80"));
+        let h = Host::parse("*:*").unwrap();
+        assert_eq!(h.host, "*");
+        assert_eq!(h.port, Some("*"));
+        let h = Host::parse("http://google.com").unwrap();
+        assert_eq!(h.host, "google.com");
+        assert_eq!(h.scheme, Some("http"));
+        assert_eq!(h.path, None);
+        let h = Host::parse("http://google.com/test").unwrap();
+        assert_eq!(h.host, "google.com");
+        assert_eq!(h.scheme, Some("http"));
+        assert_eq!(h.path, Some("/test"));
     }
 }
