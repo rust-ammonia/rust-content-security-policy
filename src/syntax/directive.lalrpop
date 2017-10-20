@@ -1,3 +1,5 @@
+use lalrpop_util::ParseError;
+
 use syntax::media_type;
 use syntax::source_expression;
 use syntax::types;
@@ -53,18 +55,24 @@ pub SourceExpressionList: Vec<types::Source<'input>> = {
   "'none'" => Vec::new(),
 };
 
-SourceExpression: types::Source<'input> = Token
-  =>? source_expression::parse_SourceExpression(<>);
+SourceExpression: types::Source<'input> = Token =>? {
+  source_expression::parse_SourceExpression(<>)
+    .map_err(|_| ParseError::User{error: "invalid source expression"})
+};
 
 pub AncestorSourceList: Vec<types::Ancestor<'input>> = {
   <AncestorSource+>,
   "'none'" => Vec::new(),
 };
 
-AncestorSource: types::Ancestor<'input> = Token
-  =>? source_expression::parse_AncestorSource(<>);
+AncestorSource: types::Ancestor<'input> = Token =>? {
+  source_expression::parse_AncestorSource(<>)
+    .map_err(|_| ParseError::User{error: "invalid ancestor source"})
+};
 
-MediaType: &'input str = Token
-  =>? media_type::parse_MediaType(<>);
+MediaType: &'input str = Token =>? {
+  media_type::parse_MediaType(<>)
+    .map_err(|_| ParseError::User{error: "invalid media type"})
+};
 
 Token = r"[^\s;,]+";
