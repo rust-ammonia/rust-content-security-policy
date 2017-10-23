@@ -43,7 +43,8 @@ meaning that order would have to be tracked within the tree somehow.
 But, anyway, the data structure for a source expression list like this:
 
 ```ignore
-https://example.com/ *.examplecdn.com/scripts/ *.examplecdn.com/script/ *.examplecdn.com/js/ cdn.framework.org
+script-src example.com/ *.examplecdn.com/scripts/ *.examplecdn.com/script/ *.examplecdn.com/js/ cdn.framework.org;
+style-src cdn.framework.org example.com
 ```
 
 Will be turned into a tree that looks like this:
@@ -71,19 +72,18 @@ Will be turned into a tree that looks like this:
  | / |               | / |                      | [wildcard] |
  \===/               \===/                      \------------/
     |                  | \_________                    |
-  (scheme: https)      |           \                 /===\
+  (script, style)      |           \                 /===\
                     /========\ /=====\               | / |
                     | script | | js/ |               \===/
                     \========/ \=====/                 \________
                        |   |        \__________                 \
-                       |   |                   \              (scheme: https, http)
-                    /====\ /===\          (scheme: https, http)
+                       |   |                   \              (script, style)
+                    /====\ /===\          (script)             
                     | s/ | | / |
                     \====/ \===/
+                      |       |
+                    (script) (script)
 ```
-
-The "flags" thing at the end actually has a few other things besides the scheme,
-but they're not really relevant to understanding the important concepts:
 
 * domain names are flipped backwards, on the assumption that the TLD is duplicated
   way more often than the other end. Also, this puts the wildcards at the end,
@@ -106,87 +106,89 @@ use std::cmp::Ordering::*;
 use std::collections::HashMap;
 use std::mem;
 
+use super::Resource;
+
 #[derive(Debug)]
-pub(crate) struct HostNode<'a> {
+pub struct HostNode<'a> {
     terminal: PathNode<'a>,
     wildcard: PathNode<'a>,
     children: HashMap<&'a str, HostNode<'a>>,
 }
 
 impl<'a> HostNode<'a> {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         HostNode {
             terminal: PathNode::new(),
             wildcard: PathNode::new(),
             children: HashMap::new(),
         }
     }
-    pub(crate) fn arrange(&mut self) {
+    pub fn arrange(&mut self) {
         self.terminal.arrange();
         self.wildcard.arrange();
         for (_, child) in self.children.iter_mut() {
             child.arrange();
         }
     }
-    fn check_<'b, I: Iterator<Item=&'b str>>(&self, scheme: ReqType, parts: &'b mut I, path: &'b str) -> bool {
+    fn check_<'b, I: Iterator<Item=&'b str>>(&self, resource: Resource, parts: &'b mut I, path: &'b str) -> bool {
         if let Some(part) = parts.next() {
             (if let Some(child) = self.children.get(part) {
-                child.check_(scheme, parts, path)
+                child.check_(resource, parts, path)
             } else {
                 false
-            }) || self.wildcard.check(scheme, path)
+            }) || self.wildcard.check(resource, path)
         } else {
-            self.terminal.check(scheme, path)
+            self.terminal.check(resource, path)
         }
     }
-    pub(crate) fn check<'b>(&self, scheme: ReqType, host: &'b str, path: &'b str) -> bool {
-        self.check_(scheme, &mut host.split('.').rev(), path)
+    pub fn check<'b>(&self, resource: Resource, host: &'b str, path: &'b str) -> bool {
+        self.check_(resource, &mut host.split('.').rev(), path)
     }
-    pub(crate) fn insert(&mut self, scheme: ReqType, host: &'a str, path: &'a str) {
-        self.insert_(scheme, &mut host.split('.').rev(), path)
+    pub fn insert(&mut self, resource: Resource, host: &'a str, path: &'a str) {
+        self.insert_(resource, &mut host.split('.').rev(), path)
     }
-    fn insert_<'b, I: Iterator<Item=&'a str>>(&mut self, scheme: ReqType, parts: &'b mut I, path: &'a str) {
+    fn insert_<'b, I: Iterator<Item=&'a str>>(&mut self, resource: Resource, parts: &'b mut I, path: &'a str) {
         if let Some(part) = parts.next() {
             if part == "*" {
-                self.wildcard.insert(scheme, path)
+                self.wildcard.insert(resource, path)
             } else {
                 self.children.entry(part)
                     .or_insert_with(|| HostNode::new())
-                    .insert_(scheme, parts, path)
+                    .insert_(resource, parts, path)
             }
         } else {
-            self.terminal.insert(scheme, path)
+            self.terminal.insert(resource, path)
         }
     }
 }
 
 #[derive(Debug)]
-pub(crate) struct PathNode<'a> {
+pub struct PathNode<'a> {
     flags: PathNodeFlags,
     children: Vec<PathEdge<'a>>,
 }
 
 #[derive(Debug)]
-pub(crate) struct PathEdge<'a> {
+pub struct PathEdge<'a> {
     prefix: &'a str,
     node: PathNode<'a>,
 }
 
 impl<'a> PathNode<'a> {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         PathNode {
             flags: PathNodeFlags::empty(),
             children: Vec::new(),
         }
     }
-    pub(crate) fn insert(&mut self, scheme: ReqType, mut path: &'a str) {
+    pub fn insert(&mut self, resource: Resource, mut path: &'a str) {
         if path.as_bytes().get(0) == Some(&b'/') {
             path = &path[1..];
         }
-        self.insert_(scheme, path);
+        self.insert_(resource, path);
     }
-    fn insert_(&mut self, scheme: ReqType, path: &'a str) {
-        let flag = scheme.flag();
+    fn insert_(&mut self, resource: Resource, path: &'a str) {
+        let flag = resource.flag();
         if path == "" {
             self.flags |= flag;
             return;
@@ -195,7 +197,7 @@ impl<'a> PathNode<'a> {
             debug_assert!(child.prefix.len() > 0);
             if path.len() >= child.prefix.len() {
                 if path.starts_with(child.prefix) {
-                    return child.node.insert_(scheme, &path[child.prefix.len()..]);
+                    return child.node.insert_(resource, &path[child.prefix.len()..]);
                 }
                 for i in 1 .. child.prefix.len() {
                     let sub = &child.prefix[0..i];
@@ -278,126 +280,76 @@ impl<'a> PathNode<'a> {
         };
         self.children.push(new_edge);
     }
-    pub(crate) fn arrange(&mut self) {
+    pub fn arrange(&mut self) {
         self.children.sort_by_key(|child| child.prefix);
         search::arrange(&mut self.children);
         for child in &mut self.children {
             child.node.arrange();
         }
     }
-    fn check_<'b>(&self, scheme: ReqType, path: &'b str) -> bool {
-        self.check_scheme(scheme)
+    fn check_<'b>(&self, resource: Resource, path: &'b str) -> bool {
+        self.check_resource(resource)
         || search::find(&self.children[..], |child| {
             if path.starts_with(child.prefix) {
                 Equal
             } else {
                 child.prefix.cmp(path)
             }
-        }).map(|child| child.node.check_(scheme, &path[child.prefix.len()..]))
+        }).map(|child| child.node.check_(resource, &path[child.prefix.len()..]))
           .unwrap_or(false)
     }
-    pub(crate) fn check<'b>(&self, scheme: ReqType, mut path: &'b str) -> bool {
+    pub fn check<'b>(&self, resource: Resource, mut path: &'b str) -> bool {
         if path.as_bytes().get(0) == Some(&b'/') {
             path = &path[1..];
         }
-        self.check_(scheme, path)
+        self.check_(resource, path)
     }
-    fn check_scheme(&self, scheme: ReqType) -> bool {
-        self.flags.contains(scheme.flag())
+    fn check_resource(&self, resource: Resource) -> bool {
+        self.flags.contains(resource.flag())
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct ReqType(ReqScheme, ReqResource);
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ReqScheme {
-    Ftp,
-    Gopher,
-    Http,
-    Https,
-    Ws,
-    Wss,
-    // Non-standard schemes and ports are handled at a higher level,
-    // so as to avoid taking up space in every single tree node in common cases
-    // where they go unused.
-    Custom,
-}
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ReqResource {
-    ChildSrc,
-    ConnectSrc,
-    DefaultSrc,
-    FontSrc,
-    FrameSrc,
-    ImgSrc,
-    ManifestSrc,
-    MediaSrc,
-    ObjectSrc,
-    ScriptSrc,
-    StyleSrc,
-    WorkerSrc,
-    BaseUri,
-    FormAction,
-    FrameAncestors,
-}
-impl ReqType {
+impl Resource {
     fn flag(self) -> PathNodeFlags {
-        let scheme = match self.0 {
-            ReqScheme::Ftp => PathNodeFlags::SCHEME_FTP,
-            ReqScheme::Gopher => PathNodeFlags::SCHEME_GOPHER,
-            ReqScheme::Http => PathNodeFlags::SCHEME_HTTP,
-            ReqScheme::Https => PathNodeFlags::SCHEME_HTTPS,
-            ReqScheme::Ws => PathNodeFlags::SCHEME_WS,
-            ReqScheme::Wss => PathNodeFlags::SCHEME_WSS,
-            ReqScheme::Custom => PathNodeFlags::SCHEME_CUSTOM,
-        };
-        let resource = match self.1 {
-            ReqResource::ChildSrc => PathNodeFlags::RESOURCE_CHILD_SRC,
-            ReqResource::ConnectSrc => PathNodeFlags::RESOURCE_CONNECT_SRC,
-            ReqResource::DefaultSrc => PathNodeFlags::RESOURCE_DEFAULT_SRC,
-            ReqResource::FontSrc => PathNodeFlags::RESOURCE_FONT_SRC,
-            ReqResource::FrameSrc => PathNodeFlags::RESOURCE_FRAME_SRC,
-            ReqResource::ImgSrc => PathNodeFlags::RESOURCE_IMG_SRC,
-            ReqResource::ManifestSrc => PathNodeFlags::RESOURCE_MANIFEST_SRC,
-            ReqResource::MediaSrc => PathNodeFlags::RESOURCE_MEDIA_SRC,
-            ReqResource::ObjectSrc => PathNodeFlags::RESOURCE_OBJECT_SRC,
-            ReqResource::ScriptSrc => PathNodeFlags::RESOURCE_SCRIPT_SRC,
-            ReqResource::StyleSrc => PathNodeFlags::RESOURCE_STYLE_SRC,
-            ReqResource::WorkerSrc => PathNodeFlags::RESOURCE_WORKER_SRC,
-            ReqResource::BaseUri => PathNodeFlags::RESOURCE_BASE_URI,
-            ReqResource::FormAction => PathNodeFlags::RESOURCE_FORM_ACTION,
-            ReqResource::FrameAncestors => PathNodeFlags::RESOURCE_FRAME_ANCESTORS,
-        };
-        scheme | resource
+        match self {
+            Resource::ChildSrc => PathNodeFlags::RESOURCE_CHILD_SRC,
+            Resource::ConnectSrc => PathNodeFlags::RESOURCE_CONNECT_SRC,
+            Resource::DefaultSrc => PathNodeFlags::RESOURCE_DEFAULT_SRC,
+            Resource::FontSrc => PathNodeFlags::RESOURCE_FONT_SRC,
+            Resource::FrameSrc => PathNodeFlags::RESOURCE_FRAME_SRC,
+            Resource::ImgSrc => PathNodeFlags::RESOURCE_IMG_SRC,
+            Resource::ManifestSrc => PathNodeFlags::RESOURCE_MANIFEST_SRC,
+            Resource::MediaSrc => PathNodeFlags::RESOURCE_MEDIA_SRC,
+            Resource::ObjectSrc => PathNodeFlags::RESOURCE_OBJECT_SRC,
+            Resource::ScriptSrc => PathNodeFlags::RESOURCE_SCRIPT_SRC,
+            Resource::StyleSrc => PathNodeFlags::RESOURCE_STYLE_SRC,
+            Resource::WorkerSrc => PathNodeFlags::RESOURCE_WORKER_SRC,
+            Resource::BaseUri => PathNodeFlags::RESOURCE_BASE_URI,
+            Resource::FormAction => PathNodeFlags::RESOURCE_FORM_ACTION,
+            Resource::FrameAncestors => PathNodeFlags::RESOURCE_FRAME_ANCESTORS,
+        }
     }
 }
 
 // If PathNodeFlags is all-zero, then no permissions are granted
 // This policy can be effectively dropped with no behavioral changes.
 bitflags!{
-    struct PathNodeFlags: u32 {
-        const SCHEME_FTP               = 0b00000000_00000000_00000001;
-        const SCHEME_GOPHER            = 0b00000000_00000000_00000010;
-        const SCHEME_HTTP              = 0b00000000_00000000_00000100;
-        const SCHEME_HTTPS             = 0b00000000_00000000_00001000;
-        const SCHEME_WS                = 0b00000000_00000000_00010000;
-        const SCHEME_WSS               = 0b00000000_00000000_00100000;
-        const SCHEME_CUSTOM            = 0b00000000_00000000_01000000;
-        const RESOURCE_CHILD_SRC       = 0b00000000_00000000_10000000;
-        const RESOURCE_CONNECT_SRC     = 0b00000000_00000001_00000000;
-        const RESOURCE_DEFAULT_SRC     = 0b00000000_00000010_00000000;
-        const RESOURCE_FONT_SRC        = 0b00000000_00000100_00000000;
-        const RESOURCE_FRAME_SRC       = 0b00000000_00001000_00000000;
-        const RESOURCE_IMG_SRC         = 0b00000000_00010000_00000000;
-        const RESOURCE_MANIFEST_SRC    = 0b00000000_00100000_00000000;
-        const RESOURCE_MEDIA_SRC       = 0b00000000_01000000_00000000;
-        const RESOURCE_OBJECT_SRC      = 0b00000000_10000000_00000000;
-        const RESOURCE_SCRIPT_SRC      = 0b00000001_00000000_00000000;
-        const RESOURCE_STYLE_SRC       = 0b00000010_00000000_00000000;
-        const RESOURCE_WORKER_SRC      = 0b00000100_00000000_00000000;
-        const RESOURCE_BASE_URI        = 0b00001000_00000000_00000000;
-        const RESOURCE_FORM_ACTION     = 0b00010000_00000000_00000000;
-        const RESOURCE_FRAME_ANCESTORS = 0b00100000_00000000_00000000;
+    struct PathNodeFlags: u16 {
+        const RESOURCE_CHILD_SRC       = 0b00000000_00000001;
+        const RESOURCE_CONNECT_SRC     = 0b00000000_00000010;
+        const RESOURCE_DEFAULT_SRC     = 0b00000000_00000100;
+        const RESOURCE_FONT_SRC        = 0b00000000_00001000;
+        const RESOURCE_FRAME_SRC       = 0b00000000_00010000;
+        const RESOURCE_IMG_SRC         = 0b00000000_00100000;
+        const RESOURCE_MANIFEST_SRC    = 0b00000000_01000000;
+        const RESOURCE_MEDIA_SRC       = 0b00000000_10000000;
+        const RESOURCE_OBJECT_SRC      = 0b00000001_00000000;
+        const RESOURCE_SCRIPT_SRC      = 0b00000010_00000000;
+        const RESOURCE_STYLE_SRC       = 0b00000100_00000000;
+        const RESOURCE_WORKER_SRC      = 0b00001000_00000000;
+        const RESOURCE_BASE_URI        = 0b00010000_00000000;
+        const RESOURCE_FORM_ACTION     = 0b00100000_00000000;
+        const RESOURCE_FRAME_ANCESTORS = 0b01000000_00000000;
     }
 }
 
@@ -410,11 +362,11 @@ mod test {
             fn $i() {
                 let mut tree = PathNode::new();
                 $(
-                    tree.insert(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), $item);
+                    tree.insert(Resource::ScriptSrc, $item);
                 )*
                 tree.arrange();
                 println!("{:?}", tree);
-                assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), $find), $mode);
+                assert_eq!(tree.check(Resource::ScriptSrc, $find), $mode);
             }
         }
     }
@@ -433,41 +385,41 @@ mod test {
     #[test]
     fn prefixed_mixed_match() {
         let mut tree = PathNode::new();
-        tree.insert(ReqType(ReqScheme::Https, ReqResource::ScriptSrc), "/a");
-        tree.insert(ReqType(ReqScheme::Https, ReqResource::ScriptSrc), "/ab");
-        tree.insert(ReqType(ReqScheme::Https, ReqResource::ScriptSrc), "/abc");
-        tree.insert(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "/abc");
+        tree.insert(Resource::StyleSrc, "/a");
+        tree.insert(Resource::StyleSrc, "/ab");
+        tree.insert(Resource::StyleSrc, "/abc");
+        tree.insert(Resource::ScriptSrc, "/abc");
         tree.arrange();
         println!("{:?}", tree);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "/a"), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "/ab"), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "/abc"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "/a"), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "/ab"), false);
+        assert_eq!(tree.check(Resource::StyleSrc, "/abc"), true);
     }
 
     #[test]
     fn prefixed_mixed_one_match() {
         let mut tree = PathNode::new();
-        tree.insert(ReqType(ReqScheme::Https, ReqResource::ScriptSrc), "/a");
-        tree.insert(ReqType(ReqScheme::Https, ReqResource::ScriptSrc), "/ab");
-        tree.insert(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "/abc");
+        tree.insert(Resource::StyleSrc, "/a");
+        tree.insert(Resource::StyleSrc, "/ab");
+        tree.insert(Resource::ScriptSrc, "/abc");
         tree.arrange();
         println!("{:?}", tree);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "/a"), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "/ab"), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "/abc"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "/a"), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "/ab"), false);
+        assert_eq!(tree.check(Resource::StyleSrc, "/abc"), true);
     }
 
     #[test]
     fn prefixed_mixed_parent_match() {
         let mut tree = PathNode::new();
-        tree.insert(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "/a");
-        tree.insert(ReqType(ReqScheme::Https, ReqResource::ScriptSrc), "/ab");
-        tree.insert(ReqType(ReqScheme::Https, ReqResource::ScriptSrc), "/abc");
+        tree.insert(Resource::StyleSrc, "/a");
+        tree.insert(Resource::ScriptSrc, "/ab");
+        tree.insert(Resource::ScriptSrc, "/abc");
         tree.arrange();
         println!("{:?}", tree);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "/a"), true);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "/ab"), true);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "/abc"), true);
+        assert_eq!(tree.check(Resource::StyleSrc, "/a"), true);
+        assert_eq!(tree.check(Resource::StyleSrc, "/ab"), true);
+        assert_eq!(tree.check(Resource::StyleSrc, "/abc"), true);
     }
 
     #[test]
@@ -475,86 +427,86 @@ mod test {
         let mut tree = HostNode::new();
         tree.arrange();
         println!("{:?}", tree);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "", ""), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "google.com", "script"), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "google.com", "script.js"), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "cdn.google.com", "script.js"), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "", ""), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script"), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script.js"), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script.js"), false);
     }
 
     #[test]
     fn host_tree_basic() {
         let mut tree = HostNode::new();
-        tree.insert(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "google.com", "script");
+        tree.insert(Resource::ScriptSrc, "google.com", "script");
         tree.arrange();
         println!("{:?}", tree);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "", ""), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "google.com", "script"), true);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "google.com", "script.js"), true);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "cdn.google.com", "script.js"), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "", ""), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script.js"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script.js"), false);
     }
 
     #[test]
     fn host_tree_wildcard() {
         let mut tree = HostNode::new();
-        tree.insert(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "*.google.com", "script");
+        tree.insert(Resource::ScriptSrc, "*.google.com", "script");
         tree.arrange();
         println!("{:?}", tree);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "", ""), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "google.com", "script"), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "google.com", "script.js"), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "cdn.google.com", "script.js"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "", ""), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script"), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script.js"), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script.js"), true);
     }
 
     #[test]
     fn host_tree_mixed() {
         let mut tree = HostNode::new();
-        tree.insert(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "google.com", "script");
-        tree.insert(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "*.google.com", "script");
+        tree.insert(Resource::ScriptSrc, "google.com", "script");
+        tree.insert(Resource::ScriptSrc, "*.google.com", "script");
         tree.arrange();
         println!("{:?}", tree);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "", ""), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "google.com", "script"), true);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "google.com", "script.js"), true);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "cdn.google.com", "script.js"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "", ""), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script.js"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script.js"), true);
     }
 
     #[test]
     fn host_tree_mixed_scheme() {
         let mut tree = HostNode::new();
-        tree.insert(ReqType(ReqScheme::Https, ReqResource::ScriptSrc), "google.com", "script");
-        tree.insert(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "*.google.com", "script");
+        tree.insert(Resource::StyleSrc, "google.com", "script");
+        tree.insert(Resource::ScriptSrc, "*.google.com", "script");
         tree.arrange();
         println!("{:?}", tree);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "", ""), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "google.com", "script"), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "google.com", "script.js"), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "cdn.google.com", "script.js"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "", ""), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script"), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script.js"), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script.js"), true);
     }
 
     #[test]
     fn host_tree_fallback_after_wildcard() {
         let mut tree = HostNode::new();
-        tree.insert(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "*.google.com", "style");
-        tree.insert(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "cdn.google.com", "script");
+        tree.insert(Resource::ScriptSrc, "*.google.com", "style");
+        tree.insert(Resource::ScriptSrc, "cdn.google.com", "script");
         tree.arrange();
         println!("{:?}", tree);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "", ""), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "users.google.com", "style"), true);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "users.google.com", "script"), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "cdn.google.com", "style"), true);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "cdn.google.com", "script"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "", ""), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "users.google.com", "style"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "users.google.com", "script"), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "style"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script"), true);
     }
 
     #[test]
     fn host_tree_mixed_resource_type() {
         let mut tree = HostNode::new();
-        tree.insert(ReqType(ReqScheme::Http, ReqResource::StyleSrc), "*.google.com", "style");
-        tree.insert(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "cdn.google.com", "script");
+        tree.insert(Resource::StyleSrc, "*.google.com", "style");
+        tree.insert(Resource::ScriptSrc, "cdn.google.com", "script");
         tree.arrange();
         println!("{:?}", tree);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::StyleSrc), "users.google.com", "style"), true);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "users.google.com", "style"), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::StyleSrc), "cdn.google.com", "script"), false);
-        assert_eq!(tree.check(ReqType(ReqScheme::Http, ReqResource::ScriptSrc), "cdn.google.com", "script"), true);
+        assert_eq!(tree.check(Resource::StyleSrc, "users.google.com", "style"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "users.google.com", "style"), false);
+        assert_eq!(tree.check(Resource::StyleSrc, "cdn.google.com", "script"), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script"), true);
     }
 }
