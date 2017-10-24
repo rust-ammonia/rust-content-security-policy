@@ -71,28 +71,21 @@ Will be turned into a tree that looks like this:
  /===\               /===\                      /------------\
  | / |               | / |                      | [wildcard] |
  \===/               \===/                      \------------/
-    |                  | \_________                    |
-  (script, style)      |           \                 /===\
-                    /========\ /=====\               | / |
-                    | script | | js/ |               \===/
-                    \========/ \=====/                 \________
-                       |   |        \__________                 \
-                       |   |                   \              (script, style)
-                    /====\ /===\          (script)             
-                    | s/ | | / |
-                    \====/ \===/
-                      |       |
-                    (script) (script)
+    |               /  | \_________                    |
+  (script, style) _/   |           \                 /===\
+                 /  /==========\ /=====\             | / |
+       /=========\  | scripts/ | | js/ |             \===/
+       | script/ |  \==========/ \=====/               \________
+       \=========/         |        |                           \
+           |            (script)  (script)                     (script, style)
+        (script)
 ```
 
 * domain names are flipped backwards, on the assumption that the TLD is duplicated
   way more often than the other end. Also, this puts the wildcards at the end,
-  instead of the beginning.
-* domain names are processed a component at a time, because that's how the spec
-  describes the matching algorithm.
-* paths, however, are treated as arbitrary strings (except by normalizing the empty path into "/").
-* path edges are stored in a compact binary search tree
-* host edges are stored in a hash map
+  instead of the beginning, which is way easier to implement.
+* this tree is build a-component-at-a-time, not treating domains or paths as strings
+  because of some ways that the spec makes that easier to implement correctly
 
 You may also notice that there is no use of threads in rust-content-security-policy at all.
 However, the parsed tree does implement `Send` and `Sync`, so a document with many URLs to check
@@ -123,13 +116,6 @@ impl<'a> HostNode<'a> {
             children: HashMap::new(),
         }
     }
-    pub fn arrange(&mut self) {
-        self.terminal.arrange();
-        self.wildcard.arrange();
-        for (_, child) in self.children.iter_mut() {
-            child.arrange();
-        }
-    }
     fn check_<'b, I: Iterator<Item=&'b str>>(&self, resource: Resource, parts: &'b mut I, path: &'b str) -> bool {
         if let Some(part) = parts.next() {
             (if let Some(child) = self.children.get(part) {
@@ -153,7 +139,7 @@ impl<'a> HostNode<'a> {
                 self.wildcard.insert(resource, path)
             } else {
                 self.children.entry(part)
-                    .or_insert_with(|| HostNode::new())
+                    .or_insert_with(HostNode::new)
                     .insert_(resource, parts, path)
             }
         } else {
@@ -164,148 +150,58 @@ impl<'a> HostNode<'a> {
 
 #[derive(Debug)]
 pub struct PathNode<'a> {
-    flags: PathNodeFlags,
-    children: Vec<PathEdge<'a>>,
-}
-
-#[derive(Debug)]
-pub struct PathEdge<'a> {
-    prefix: &'a str,
-    node: PathNode<'a>,
+    exact_match_flags: PathNodeFlags,
+    inexact_match_flags: PathNodeFlags,
+    children: HashMap<&'a str, PathNode<'a>>,
 }
 
 impl<'a> PathNode<'a> {
     pub fn new() -> Self {
         PathNode {
-            flags: PathNodeFlags::empty(),
-            children: Vec::new(),
+            exact_match_flags: PathNodeFlags::empty(),
+            inexact_match_flags: PathNodeFlags::empty(),
+            children: HashMap::new(),
         }
     }
     pub fn insert(&mut self, resource: Resource, mut path: &'a str) {
-        if path.as_bytes().get(0) == Some(&b'/') {
-            path = &path[1..];
-        }
-        self.insert_(resource, path);
+        let exact_match = path.len() != 0 && path.as_bytes().get(path.len() - 1) != Some(&b'/');
+        self.insert_(resource, &mut path.split('/'), exact_match);
     }
-    fn insert_(&mut self, resource: Resource, path: &'a str) {
-        let flag = resource.flag();
-        if path == "" {
-            self.flags |= flag;
-            return;
-        }
-        for child in &mut self.children {
-            debug_assert!(child.prefix.len() > 0);
-            if path.len() >= child.prefix.len() {
-                if path.starts_with(child.prefix) {
-                    return child.node.insert_(resource, &path[child.prefix.len()..]);
-                }
-                for i in 1 .. child.prefix.len() {
-                    let sub = &child.prefix[0..i];
-                    if path.starts_with(sub) {
-                        let internal_node = PathNode {
-                            flags: PathNodeFlags::empty(),
-                            children: Vec::new(),
-                        };
-                        let internal_edge = PathEdge {
-                            node: internal_node,
-                            prefix: sub,
-                        };
-                        let mut old_edge = mem::replace(child, internal_edge);
-                        old_edge.prefix = &old_edge.prefix[i..];
-                        child.node.children.push(old_edge);
-                        let new_node = PathNode {
-                            flags: flag,
-                            children: Vec::new(),
-                        };
-                        let new_edge = PathEdge {
-                            node: new_node,
-                            prefix: &path[i..],
-                        };
-                        child.node.children.push(new_edge);
-                        return;
-                    }
-                }
+    fn insert_<'b, I: Iterator<Item=&'a str>>(&mut self, resource: Resource, parts: &'b mut I, exact_match: bool) {
+        if let Some(part) = parts.next() {
+            if part == "" {
+                return self.insert_(resource, parts, exact_match);
+            }
+            self.children.entry(part)
+                .or_insert_with(PathNode::new)
+                .insert_(resource, parts, exact_match);
+        } else {
+            let flag = resource.flag();
+            if exact_match {
+                self.exact_match_flags |= flag;
             } else {
-                if child.prefix.starts_with(path) {
-                    let new_child = PathNode {
-                        flags: child.node.flags,
-                        children: mem::replace(&mut child.node.children, Vec::new()),
-                    };
-                    let new_edge = PathEdge {
-                        node: new_child,
-                        prefix: &child.prefix[path.len()..],
-                    };
-                    child.prefix = path;
-                    child.node = PathNode {
-                        flags: flag,
-                        children: vec![new_edge],
-                    };
-                    return;
-                }
-                for i in 1 .. path.len() {
-                    let sub = &path[0..i];
-                    if child.prefix.starts_with(sub) {
-                        let internal_node = PathNode {
-                            flags: PathNodeFlags::empty(),
-                            children: Vec::new(),
-                        };
-                        let internal_edge = PathEdge {
-                            node: internal_node,
-                            prefix: sub,
-                        };
-                        let mut old_edge = mem::replace(child, internal_edge);
-                        old_edge.prefix = &old_edge.prefix[i..];
-                        child.node.children.push(old_edge);
-                        let new_node = PathNode {
-                            flags: flag,
-                            children: Vec::new(),
-                        };
-                        let new_edge = PathEdge {
-                            node: new_node,
-                            prefix: &path[i..],
-                        };
-                        child.node.children.push(new_edge);
-                        return;
-                    }
-                }
+                self.inexact_match_flags |= flag;
             }
         }
-        let new_child = PathNode {
-            flags: flag,
-            children: Vec::new(),
-        };
-        let new_edge = PathEdge {
-            node: new_child,
-            prefix: path,
-        };
-        self.children.push(new_edge);
-    }
-    pub fn arrange(&mut self) {
-        self.children.sort_by_key(|child| child.prefix);
-        search::arrange(&mut self.children);
-        for child in &mut self.children {
-            child.node.arrange();
-        }
-    }
-    fn check_<'b>(&self, resource: Resource, path: &'b str) -> bool {
-        self.check_resource(resource)
-        || search::find(&self.children[..], |child| {
-            if path.starts_with(child.prefix) {
-                Equal
-            } else {
-                child.prefix.cmp(path)
-            }
-        }).map(|child| child.node.check_(resource, &path[child.prefix.len()..]))
-          .unwrap_or(false)
     }
     pub fn check<'b>(&self, resource: Resource, mut path: &'b str) -> bool {
         if path.as_bytes().get(0) == Some(&b'/') {
             path = &path[1..];
         }
-        self.check_(resource, path)
+        self.check_(resource, &mut path.split('/'))
     }
-    fn check_resource(&self, resource: Resource) -> bool {
-        self.flags.contains(resource.flag())
+    fn check_<'b, I: Iterator<Item=&'b str>>(&self, resource: Resource, parts: &'b mut I) -> bool {
+        let flag = resource.flag();
+        self.inexact_match_flags.contains(flag)
+        || (if let Some(part) = parts.next() {
+            if let Some(child) = self.children.get(part) {
+                child.check_(resource, parts)
+            } else {
+                false
+            }
+        } else {
+            self.exact_match_flags.contains(flag)
+        })
     }
 }
 
@@ -364,7 +260,6 @@ mod test {
                 $(
                     tree.insert(Resource::ScriptSrc, $item);
                 )*
-                tree.arrange();
                 println!("{:?}", tree);
                 assert_eq!(tree.check(Resource::ScriptSrc, $find), $mode);
             }
@@ -386,46 +281,43 @@ mod test {
     fn prefixed_mixed_match() {
         let mut tree = PathNode::new();
         tree.insert(Resource::StyleSrc, "/a");
-        tree.insert(Resource::StyleSrc, "/ab");
-        tree.insert(Resource::StyleSrc, "/abc");
-        tree.insert(Resource::ScriptSrc, "/abc");
-        tree.arrange();
+        tree.insert(Resource::StyleSrc, "/a/b");
+        tree.insert(Resource::StyleSrc, "/a/b/c");
+        tree.insert(Resource::ScriptSrc, "/a/b/c");
         println!("{:?}", tree);
         assert_eq!(tree.check(Resource::ScriptSrc, "/a"), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "/ab"), false);
-        assert_eq!(tree.check(Resource::StyleSrc, "/abc"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "/a/b"), false);
+        assert_eq!(tree.check(Resource::StyleSrc, "/a/b/c"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "/a/b/c"), true);
     }
 
     #[test]
     fn prefixed_mixed_one_match() {
         let mut tree = PathNode::new();
-        tree.insert(Resource::StyleSrc, "/a");
-        tree.insert(Resource::StyleSrc, "/ab");
-        tree.insert(Resource::ScriptSrc, "/abc");
-        tree.arrange();
+        tree.insert(Resource::StyleSrc, "/a/");
+        tree.insert(Resource::StyleSrc, "/a/b/");
+        tree.insert(Resource::ScriptSrc, "/a/b/c/");
         println!("{:?}", tree);
-        assert_eq!(tree.check(Resource::ScriptSrc, "/a"), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "/ab"), false);
-        assert_eq!(tree.check(Resource::StyleSrc, "/abc"), true);
-    }
-
+        assert_eq!(tree.check(Resource::ScriptSrc, "/a/"), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "/a/b/"), false);
+        assert_eq!(tree.check(Resource::StyleSrc, "/a/b/c/"), true);
+    }//
+//
     #[test]
     fn prefixed_mixed_parent_match() {
         let mut tree = PathNode::new();
-        tree.insert(Resource::StyleSrc, "/a");
-        tree.insert(Resource::ScriptSrc, "/ab");
-        tree.insert(Resource::ScriptSrc, "/abc");
-        tree.arrange();
+        tree.insert(Resource::StyleSrc, "/a/");
+        tree.insert(Resource::ScriptSrc, "/a/b/");
+        tree.insert(Resource::ScriptSrc, "/a/b/c/");
         println!("{:?}", tree);
-        assert_eq!(tree.check(Resource::StyleSrc, "/a"), true);
-        assert_eq!(tree.check(Resource::StyleSrc, "/ab"), true);
-        assert_eq!(tree.check(Resource::StyleSrc, "/abc"), true);
+        assert_eq!(tree.check(Resource::StyleSrc, "/a/"), true);
+        assert_eq!(tree.check(Resource::StyleSrc, "/a/b/"), true);
+        assert_eq!(tree.check(Resource::StyleSrc, "/a/b/c/"), true);
     }
 
     #[test]
     fn host_tree_empty() {
         let mut tree = HostNode::new();
-        tree.arrange();
         println!("{:?}", tree);
         assert_eq!(tree.check(Resource::ScriptSrc, "", ""), false);
         assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script"), false);
@@ -437,50 +329,46 @@ mod test {
     fn host_tree_basic() {
         let mut tree = HostNode::new();
         tree.insert(Resource::ScriptSrc, "google.com", "script");
-        tree.arrange();
         println!("{:?}", tree);
         assert_eq!(tree.check(Resource::ScriptSrc, "", ""), false);
         assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script"), true);
-        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script.js"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script.js"), false);
         assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script.js"), false);
     }
 
     #[test]
     fn host_tree_wildcard() {
         let mut tree = HostNode::new();
-        tree.insert(Resource::ScriptSrc, "*.google.com", "script");
-        tree.arrange();
+        tree.insert(Resource::ScriptSrc, "*.google.com", "script/");
         println!("{:?}", tree);
         assert_eq!(tree.check(Resource::ScriptSrc, "", ""), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script"), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script.js"), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script.js"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script/"), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script/js"), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script/js"), true);
     }
 
     #[test]
     fn host_tree_mixed() {
         let mut tree = HostNode::new();
-        tree.insert(Resource::ScriptSrc, "google.com", "script");
-        tree.insert(Resource::ScriptSrc, "*.google.com", "script");
-        tree.arrange();
+        tree.insert(Resource::ScriptSrc, "google.com", "script/");
+        tree.insert(Resource::ScriptSrc, "*.google.com", "script/");
         println!("{:?}", tree);
         assert_eq!(tree.check(Resource::ScriptSrc, "", ""), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script"), true);
-        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script.js"), true);
-        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script.js"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script/"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script/js"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script/js"), true);
     }
 
     #[test]
     fn host_tree_mixed_scheme() {
         let mut tree = HostNode::new();
-        tree.insert(Resource::StyleSrc, "google.com", "script");
-        tree.insert(Resource::ScriptSrc, "*.google.com", "script");
-        tree.arrange();
+        tree.insert(Resource::StyleSrc, "google.com", "script/");
+        tree.insert(Resource::ScriptSrc, "*.google.com", "script/");
         println!("{:?}", tree);
         assert_eq!(tree.check(Resource::ScriptSrc, "", ""), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script"), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script.js"), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script.js"), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script/"), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script/js"), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script/js"), true);
     }
 
     #[test]
@@ -488,7 +376,6 @@ mod test {
         let mut tree = HostNode::new();
         tree.insert(Resource::ScriptSrc, "*.google.com", "style");
         tree.insert(Resource::ScriptSrc, "cdn.google.com", "script");
-        tree.arrange();
         println!("{:?}", tree);
         assert_eq!(tree.check(Resource::ScriptSrc, "", ""), false);
         assert_eq!(tree.check(Resource::ScriptSrc, "users.google.com", "style"), true);
@@ -502,7 +389,6 @@ mod test {
         let mut tree = HostNode::new();
         tree.insert(Resource::StyleSrc, "*.google.com", "style");
         tree.insert(Resource::ScriptSrc, "cdn.google.com", "script");
-        tree.arrange();
         println!("{:?}", tree);
         assert_eq!(tree.check(Resource::StyleSrc, "users.google.com", "style"), true);
         assert_eq!(tree.check(Resource::ScriptSrc, "users.google.com", "style"), false);
