@@ -94,11 +94,12 @@ can use threads that way, if it proves advantageous.
 */
 
 use check::search;
+use std::borrow::Cow;
 use std::cmp::{Ord, Ordering, PartialEq, PartialOrd};
 use std::cmp::Ordering::*;
 use std::collections::HashMap;
 use std::mem;
-use url::percent_encoding::percent_encode;
+use url::percent_encoding::percent_decode;
 
 use super::Resource;
 
@@ -153,7 +154,7 @@ impl<'a> HostNode<'a> {
 pub struct PathNode<'a> {
     exact_match_flags: PathNodeFlags,
     inexact_match_flags: PathNodeFlags,
-    children: HashMap<&'a [u8], PathNode<'a>>,
+    children: HashMap<Cow<'a, [u8]>, PathNode<'a>>,
 }
 
 impl<'a> PathNode<'a> {
@@ -173,7 +174,7 @@ impl<'a> PathNode<'a> {
             if part == b"" {
                 return self.insert_(resource, parts, exact_match);
             }
-            self.children.entry(part)
+            self.children.entry(percent_decode(part).into())
                 .or_insert_with(PathNode::new)
                 .insert_(resource, parts, exact_match);
         } else {
@@ -195,7 +196,8 @@ impl<'a> PathNode<'a> {
         let flag = resource.flag();
         self.inexact_match_flags.contains(flag)
         || (if let Some(part) = parts.next() {
-            if let Some(child) = self.children.get(part) {
+            let part: Cow<[u8]> = percent_decode(part).into();
+            if let Some(child) = self.children.get(part.as_ref()) {
                 child.check_(resource, parts)
             } else {
                 false
@@ -384,5 +386,12 @@ mod test {
         assert_eq!(tree.check(Resource::ScriptSrc, "users.google.com".as_bytes(), "style".as_bytes()), false);
         assert_eq!(tree.check(Resource::StyleSrc, "cdn.google.com".as_bytes(), "script".as_bytes()), false);
         assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com".as_bytes(), "script".as_bytes()), true);
+    }
+
+    #[test]
+    fn url_decodes() {
+        let mut tree = HostNode::new();
+        tree.insert(Resource::ScriptSrc, "cdn.com".as_bytes(), "sc%72ipt".as_bytes());
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.com".as_bytes(), "scri%70t".as_bytes()), true);
     }
 }
