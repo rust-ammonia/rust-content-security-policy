@@ -98,6 +98,7 @@ use std::cmp::{Ord, Ordering, PartialEq, PartialOrd};
 use std::cmp::Ordering::*;
 use std::collections::HashMap;
 use std::mem;
+use url::percent_encoding::percent_encode;
 
 use super::Resource;
 
@@ -105,7 +106,7 @@ use super::Resource;
 pub struct HostNode<'a> {
     terminal: PathNode<'a>,
     wildcard: PathNode<'a>,
-    children: HashMap<&'a str, HostNode<'a>>,
+    children: HashMap<&'a [u8], HostNode<'a>>,
 }
 
 impl<'a> HostNode<'a> {
@@ -116,7 +117,7 @@ impl<'a> HostNode<'a> {
             children: HashMap::new(),
         }
     }
-    fn check_<'b, I: Iterator<Item=&'b str>>(&self, resource: Resource, parts: &'b mut I, path: &'b str) -> bool {
+    fn check_<'b, I: Iterator<Item=&'b [u8]>>(&self, resource: Resource, parts: &'b mut I, path: &'b [u8]) -> bool {
         if let Some(part) = parts.next() {
             (if let Some(child) = self.children.get(part) {
                 child.check_(resource, parts, path)
@@ -127,15 +128,15 @@ impl<'a> HostNode<'a> {
             self.terminal.check(resource, path)
         }
     }
-    pub fn check<'b>(&self, resource: Resource, host: &'b str, path: &'b str) -> bool {
-        self.check_(resource, &mut host.split('.').rev(), path)
+    pub fn check<'b>(&self, resource: Resource, host: &'b [u8], path: &'b [u8]) -> bool {
+        self.check_(resource, &mut host.split(|&x| x == b'.').rev(), path)
     }
-    pub fn insert(&mut self, resource: Resource, host: &'a str, path: &'a str) {
-        self.insert_(resource, &mut host.split('.').rev(), path)
+    pub fn insert(&mut self, resource: Resource, host: &'a [u8], path: &'a [u8]) {
+        self.insert_(resource, &mut host.split(|&x| x == b'.').rev(), path)
     }
-    fn insert_<'b, I: Iterator<Item=&'a str>>(&mut self, resource: Resource, parts: &'b mut I, path: &'a str) {
+    fn insert_<'b, I: Iterator<Item=&'a [u8]>>(&mut self, resource: Resource, parts: &'b mut I, path: &'a [u8]) {
         if let Some(part) = parts.next() {
-            if part == "*" {
+            if part == b"*" {
                 self.wildcard.insert(resource, path)
             } else {
                 self.children.entry(part)
@@ -152,7 +153,7 @@ impl<'a> HostNode<'a> {
 pub struct PathNode<'a> {
     exact_match_flags: PathNodeFlags,
     inexact_match_flags: PathNodeFlags,
-    children: HashMap<&'a str, PathNode<'a>>,
+    children: HashMap<&'a [u8], PathNode<'a>>,
 }
 
 impl<'a> PathNode<'a> {
@@ -163,13 +164,13 @@ impl<'a> PathNode<'a> {
             children: HashMap::new(),
         }
     }
-    pub fn insert(&mut self, resource: Resource, mut path: &'a str) {
-        let exact_match = path.len() != 0 && path.as_bytes().get(path.len() - 1) != Some(&b'/');
-        self.insert_(resource, &mut path.split('/'), exact_match);
+    pub fn insert(&mut self, resource: Resource, mut path: &'a [u8]) {
+        let exact_match = path.len() != 0 && path.get(path.len() - 1) != Some(&b'/');
+        self.insert_(resource, &mut path.split(|&x| x == b'/'), exact_match);
     }
-    fn insert_<'b, I: Iterator<Item=&'a str>>(&mut self, resource: Resource, parts: &'b mut I, exact_match: bool) {
+    fn insert_<'b, I: Iterator<Item=&'a [u8]>>(&mut self, resource: Resource, parts: &'b mut I, exact_match: bool) {
         if let Some(part) = parts.next() {
-            if part == "" {
+            if part == b"" {
                 return self.insert_(resource, parts, exact_match);
             }
             self.children.entry(part)
@@ -184,13 +185,13 @@ impl<'a> PathNode<'a> {
             }
         }
     }
-    pub fn check<'b>(&self, resource: Resource, mut path: &'b str) -> bool {
-        if path.as_bytes().get(0) == Some(&b'/') {
+    pub fn check<'b>(&self, resource: Resource, mut path: &'b [u8]) -> bool {
+        if path.get(0) == Some(&b'/') {
             path = &path[1..];
         }
-        self.check_(resource, &mut path.split('/'))
+        self.check_(resource, &mut path.split(|&x| x == b'/'))
     }
-    fn check_<'b, I: Iterator<Item=&'b str>>(&self, resource: Resource, parts: &'b mut I) -> bool {
+    fn check_<'b, I: Iterator<Item=&'b [u8]>>(&self, resource: Resource, parts: &'b mut I) -> bool {
         let flag = resource.flag();
         self.inexact_match_flags.contains(flag)
         || (if let Some(part) = parts.next() {
@@ -260,139 +261,128 @@ mod test {
                 $(
                     tree.insert(Resource::ScriptSrc, $item);
                 )*
-                println!("{:?}", tree);
                 assert_eq!(tree.check(Resource::ScriptSrc, $find), $mode);
             }
         }
     }
-    do_tree_test!{empty_simple, false, ""; }
-    do_tree_test!{empty_text, false, "abc"; }
-    do_tree_test!{empty_rooted, false, "/abc"; }
-    do_tree_test!{empty_root, false, "/"; }
-    do_tree_test!{root_match, true, "/"; "/"}
-    do_tree_test!{root_equiv_match, true, ""; "/"}
-    do_tree_test!{root_equiv2_match, true, "/"; ""}
-    do_tree_test!{rooted_match, true, "/test"; "/"}
-    do_tree_test!{rooted_nomatch, false, "/test"; "/xxx"}
-    do_tree_test!{rooted_nomatch_prefix, false, "/"; "/xxx"}
-    do_tree_test!{two_nomatch, false, "/xxx"; "/test", "/test2"}
+    do_tree_test!{empty_simple, false, "".as_bytes(); }
+    do_tree_test!{empty_text, false, "abc".as_bytes(); }
+    do_tree_test!{empty_rooted, false, "/abc".as_bytes(); }
+    do_tree_test!{empty_root, false, "/".as_bytes(); }
+    do_tree_test!{root_match, true, "/".as_bytes(); "/".as_bytes()}
+    do_tree_test!{root_equiv_match, true, "".as_bytes(); "/".as_bytes()}
+    do_tree_test!{root_equiv2_match, true, "/".as_bytes(); "".as_bytes()}
+    do_tree_test!{rooted_match, true, "/test".as_bytes(); "/".as_bytes()}
+    do_tree_test!{rooted_nomatch, false, "/test".as_bytes(); "/xxx".as_bytes()}
+    do_tree_test!{rooted_nomatch_prefix, false, "/".as_bytes(); "/xxx".as_bytes()}
+    do_tree_test!{two_nomatch, false, "/xxx".as_bytes(); "/test".as_bytes(), "/test2".as_bytes()}
 
     #[test]
     fn prefixed_mixed_match() {
         let mut tree = PathNode::new();
-        tree.insert(Resource::StyleSrc, "/a");
-        tree.insert(Resource::StyleSrc, "/a/b");
-        tree.insert(Resource::StyleSrc, "/a/b/c");
-        tree.insert(Resource::ScriptSrc, "/a/b/c");
-        println!("{:?}", tree);
-        assert_eq!(tree.check(Resource::ScriptSrc, "/a"), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "/a/b"), false);
-        assert_eq!(tree.check(Resource::StyleSrc, "/a/b/c"), true);
-        assert_eq!(tree.check(Resource::ScriptSrc, "/a/b/c"), true);
+        tree.insert(Resource::StyleSrc, "/a".as_bytes());
+        tree.insert(Resource::StyleSrc, "/a/b".as_bytes());
+        tree.insert(Resource::StyleSrc, "/a/b/c".as_bytes());
+        tree.insert(Resource::ScriptSrc, "/a/b/c".as_bytes());
+        assert_eq!(tree.check(Resource::ScriptSrc, "/a".as_bytes()), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "/a/b".as_bytes()), false);
+        assert_eq!(tree.check(Resource::StyleSrc, "/a/b/c".as_bytes()), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "/a/b/c".as_bytes()), true);
     }
 
     #[test]
     fn prefixed_mixed_one_match() {
         let mut tree = PathNode::new();
-        tree.insert(Resource::StyleSrc, "/a/");
-        tree.insert(Resource::StyleSrc, "/a/b/");
-        tree.insert(Resource::ScriptSrc, "/a/b/c/");
-        println!("{:?}", tree);
-        assert_eq!(tree.check(Resource::ScriptSrc, "/a/"), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "/a/b/"), false);
-        assert_eq!(tree.check(Resource::StyleSrc, "/a/b/c/"), true);
+        tree.insert(Resource::StyleSrc, "/a/".as_bytes());
+        tree.insert(Resource::StyleSrc, "/a/b/".as_bytes());
+        tree.insert(Resource::ScriptSrc, "/a/b/c/".as_bytes());
+        assert_eq!(tree.check(Resource::ScriptSrc, "/a/".as_bytes()), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "/a/b/".as_bytes()), false);
+        assert_eq!(tree.check(Resource::StyleSrc, "/a/b/c/".as_bytes()), true);
     }//
 //
     #[test]
     fn prefixed_mixed_parent_match() {
         let mut tree = PathNode::new();
-        tree.insert(Resource::StyleSrc, "/a/");
-        tree.insert(Resource::ScriptSrc, "/a/b/");
-        tree.insert(Resource::ScriptSrc, "/a/b/c/");
-        println!("{:?}", tree);
-        assert_eq!(tree.check(Resource::StyleSrc, "/a/"), true);
-        assert_eq!(tree.check(Resource::StyleSrc, "/a/b/"), true);
-        assert_eq!(tree.check(Resource::StyleSrc, "/a/b/c/"), true);
+        tree.insert(Resource::StyleSrc, "/a/".as_bytes());
+        tree.insert(Resource::ScriptSrc, "/a/b/".as_bytes());
+        tree.insert(Resource::ScriptSrc, "/a/b/c/".as_bytes());
+        assert_eq!(tree.check(Resource::StyleSrc, "/a/".as_bytes()), true);
+        assert_eq!(tree.check(Resource::StyleSrc, "/a/b/".as_bytes()), true);
+        assert_eq!(tree.check(Resource::StyleSrc, "/a/b/c/".as_bytes()), true);
     }
 
     #[test]
     fn host_tree_empty() {
         let mut tree = HostNode::new();
-        println!("{:?}", tree);
-        assert_eq!(tree.check(Resource::ScriptSrc, "", ""), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script"), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script.js"), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script.js"), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "".as_bytes(), "".as_bytes()), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com".as_bytes(), "script".as_bytes()), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com".as_bytes(), "script.js".as_bytes()), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com".as_bytes(), "script.js".as_bytes()), false);
     }
 
     #[test]
     fn host_tree_basic() {
         let mut tree = HostNode::new();
-        tree.insert(Resource::ScriptSrc, "google.com", "script");
-        println!("{:?}", tree);
-        assert_eq!(tree.check(Resource::ScriptSrc, "", ""), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script"), true);
-        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script.js"), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script.js"), false);
+        tree.insert(Resource::ScriptSrc, "google.com".as_bytes(), "script".as_bytes());
+        assert_eq!(tree.check(Resource::ScriptSrc, "".as_bytes(), "".as_bytes()), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com".as_bytes(), "script".as_bytes()), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com".as_bytes(), "script.js".as_bytes()), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com".as_bytes(), "script.js".as_bytes()), false);
     }
 
     #[test]
     fn host_tree_wildcard() {
         let mut tree = HostNode::new();
-        tree.insert(Resource::ScriptSrc, "*.google.com", "script/");
-        println!("{:?}", tree);
-        assert_eq!(tree.check(Resource::ScriptSrc, "", ""), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script/"), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script/js"), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script/js"), true);
+        tree.insert(Resource::ScriptSrc, "*.google.com".as_bytes(), "script/".as_bytes());
+        assert_eq!(tree.check(Resource::ScriptSrc, "".as_bytes(), "".as_bytes()), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com".as_bytes(), "script/".as_bytes()), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com".as_bytes(), "script/js".as_bytes()), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com".as_bytes(), "script/js".as_bytes()), true);
     }
 
     #[test]
     fn host_tree_mixed() {
         let mut tree = HostNode::new();
-        tree.insert(Resource::ScriptSrc, "google.com", "script/");
-        tree.insert(Resource::ScriptSrc, "*.google.com", "script/");
-        println!("{:?}", tree);
-        assert_eq!(tree.check(Resource::ScriptSrc, "", ""), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script/"), true);
-        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script/js"), true);
-        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script/js"), true);
+        tree.insert(Resource::ScriptSrc, "google.com".as_bytes(), "script/".as_bytes());
+        tree.insert(Resource::ScriptSrc, "*.google.com".as_bytes(), "script/".as_bytes());
+        assert_eq!(tree.check(Resource::ScriptSrc, "".as_bytes(), "".as_bytes()), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com".as_bytes(), "script/".as_bytes()), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com".as_bytes(), "script/js".as_bytes()), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com".as_bytes(), "script/js".as_bytes()), true);
     }
 
     #[test]
     fn host_tree_mixed_scheme() {
         let mut tree = HostNode::new();
-        tree.insert(Resource::StyleSrc, "google.com", "script/");
-        tree.insert(Resource::ScriptSrc, "*.google.com", "script/");
-        println!("{:?}", tree);
-        assert_eq!(tree.check(Resource::ScriptSrc, "", ""), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script/"), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "google.com", "script/js"), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script/js"), true);
+        tree.insert(Resource::StyleSrc, "google.com".as_bytes(), "script/".as_bytes());
+        tree.insert(Resource::ScriptSrc, "*.google.com".as_bytes(), "script/".as_bytes());
+        assert_eq!(tree.check(Resource::ScriptSrc, "".as_bytes(), "".as_bytes()), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com".as_bytes(), "script/".as_bytes()), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "google.com".as_bytes(), "script/js".as_bytes()), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com".as_bytes(), "script/js".as_bytes()), true);
     }
 
     #[test]
     fn host_tree_fallback_after_wildcard() {
         let mut tree = HostNode::new();
-        tree.insert(Resource::ScriptSrc, "*.google.com", "style");
-        tree.insert(Resource::ScriptSrc, "cdn.google.com", "script");
-        println!("{:?}", tree);
-        assert_eq!(tree.check(Resource::ScriptSrc, "", ""), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "users.google.com", "style"), true);
-        assert_eq!(tree.check(Resource::ScriptSrc, "users.google.com", "script"), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "style"), true);
-        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script"), true);
+        tree.insert(Resource::ScriptSrc, "*.google.com".as_bytes(), "style".as_bytes());
+        tree.insert(Resource::ScriptSrc, "cdn.google.com".as_bytes(), "script".as_bytes());
+        assert_eq!(tree.check(Resource::ScriptSrc, "".as_bytes(), "".as_bytes()), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "users.google.com".as_bytes(), "style".as_bytes()), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "users.google.com".as_bytes(), "script".as_bytes()), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com".as_bytes(), "style".as_bytes()), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com".as_bytes(), "script".as_bytes()), true);
     }
 
     #[test]
     fn host_tree_mixed_resource_type() {
         let mut tree = HostNode::new();
-        tree.insert(Resource::StyleSrc, "*.google.com", "style");
-        tree.insert(Resource::ScriptSrc, "cdn.google.com", "script");
-        println!("{:?}", tree);
-        assert_eq!(tree.check(Resource::StyleSrc, "users.google.com", "style"), true);
-        assert_eq!(tree.check(Resource::ScriptSrc, "users.google.com", "style"), false);
-        assert_eq!(tree.check(Resource::StyleSrc, "cdn.google.com", "script"), false);
-        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com", "script"), true);
+        tree.insert(Resource::StyleSrc, "*.google.com".as_bytes(), "style".as_bytes());
+        tree.insert(Resource::ScriptSrc, "cdn.google.com".as_bytes(), "script".as_bytes());
+        assert_eq!(tree.check(Resource::StyleSrc, "users.google.com".as_bytes(), "style".as_bytes()), true);
+        assert_eq!(tree.check(Resource::ScriptSrc, "users.google.com".as_bytes(), "style".as_bytes()), false);
+        assert_eq!(tree.check(Resource::StyleSrc, "cdn.google.com".as_bytes(), "script".as_bytes()), false);
+        assert_eq!(tree.check(Resource::ScriptSrc, "cdn.google.com".as_bytes(), "script".as_bytes()), true);
     }
 }

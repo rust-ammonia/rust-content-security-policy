@@ -25,12 +25,12 @@ impl<'a> Csp<'a> {
     }
     // https://www.w3.org/TR/CSP/#match-url-to-source-expression
     pub fn insert_wildcard(&mut self, origin: Origin, resource: Resource) {
-        self.host_any_network_scheme.insert(resource, "*", "");
+        self.host_any_network_scheme.insert(resource, b"*", b"");
         if let Origin::Network{scheme: scheme, ..} = origin {
             if !Self::is_network_scheme(scheme) {
                 self.host_by_scheme.entry((scheme.to_ascii_lowercase(), Port::Wildcard))
                     .or_insert_with(tree::HostNode::new)
-                    .insert(resource, "*", "")
+                    .insert(resource, b"*", b"")
             }
         }
     }
@@ -39,13 +39,13 @@ impl<'a> Csp<'a> {
             let port = port.unwrap_or_else(|| Self::default_port(scheme));
             self.host_by_scheme.entry((scheme.to_ascii_lowercase(), port))
                 .or_insert_with(tree::HostNode::new)
-                .insert(resource, host, path);
+                .insert(resource, host.as_bytes(), path.as_bytes());
         } else if let Some(port) = port {
             self.host_by_port.entry(port)
                 .or_insert_with(tree::HostNode::new)
-                .insert(resource, host, path);
+                .insert(resource, host.as_bytes(), path.as_bytes());
         } else {
-            self.host_any_network_scheme.insert(resource, host, path)
+            self.host_any_network_scheme.insert(resource, host.as_bytes(), path.as_bytes())
         }
     }
     fn is_network_scheme(scheme: &'a str) -> bool {
