@@ -101,7 +101,7 @@ use std::collections::HashMap;
 use std::mem;
 use url::percent_encoding::percent_decode;
 
-use super::Resource;
+use super::{Resource, ResourceFlags};
 
 #[derive(Debug)]
 pub struct HostNode<'a> {
@@ -152,16 +152,16 @@ impl<'a> HostNode<'a> {
 
 #[derive(Debug)]
 pub struct PathNode<'a> {
-    exact_match_flags: PathNodeFlags,
-    inexact_match_flags: PathNodeFlags,
+    exact_match_flags: ResourceFlags,
+    inexact_match_flags: ResourceFlags,
     children: HashMap<Cow<'a, [u8]>, PathNode<'a>>,
 }
 
 impl<'a> PathNode<'a> {
     pub fn new() -> Self {
         PathNode {
-            exact_match_flags: PathNodeFlags::empty(),
-            inexact_match_flags: PathNodeFlags::empty(),
+            exact_match_flags: ResourceFlags::empty(),
+            inexact_match_flags: ResourceFlags::empty(),
             children: HashMap::new(),
         }
     }
@@ -205,50 +205,6 @@ impl<'a> PathNode<'a> {
         } else {
             self.exact_match_flags.contains(flag)
         })
-    }
-}
-
-impl Resource {
-    fn flag(self) -> PathNodeFlags {
-        match self {
-            Resource::ChildSrc => PathNodeFlags::RESOURCE_CHILD_SRC,
-            Resource::ConnectSrc => PathNodeFlags::RESOURCE_CONNECT_SRC,
-            Resource::DefaultSrc => PathNodeFlags::RESOURCE_DEFAULT_SRC,
-            Resource::FontSrc => PathNodeFlags::RESOURCE_FONT_SRC,
-            Resource::FrameSrc => PathNodeFlags::RESOURCE_FRAME_SRC,
-            Resource::ImgSrc => PathNodeFlags::RESOURCE_IMG_SRC,
-            Resource::ManifestSrc => PathNodeFlags::RESOURCE_MANIFEST_SRC,
-            Resource::MediaSrc => PathNodeFlags::RESOURCE_MEDIA_SRC,
-            Resource::ObjectSrc => PathNodeFlags::RESOURCE_OBJECT_SRC,
-            Resource::ScriptSrc => PathNodeFlags::RESOURCE_SCRIPT_SRC,
-            Resource::StyleSrc => PathNodeFlags::RESOURCE_STYLE_SRC,
-            Resource::WorkerSrc => PathNodeFlags::RESOURCE_WORKER_SRC,
-            Resource::BaseUri => PathNodeFlags::RESOURCE_BASE_URI,
-            Resource::FormAction => PathNodeFlags::RESOURCE_FORM_ACTION,
-            Resource::FrameAncestors => PathNodeFlags::RESOURCE_FRAME_ANCESTORS,
-        }
-    }
-}
-
-// If PathNodeFlags is all-zero, then no permissions are granted
-// This policy can be effectively dropped with no behavioral changes.
-bitflags!{
-    struct PathNodeFlags: u16 {
-        const RESOURCE_CHILD_SRC       = 0b00000000_00000001;
-        const RESOURCE_CONNECT_SRC     = 0b00000000_00000010;
-        const RESOURCE_DEFAULT_SRC     = 0b00000000_00000100;
-        const RESOURCE_FONT_SRC        = 0b00000000_00001000;
-        const RESOURCE_FRAME_SRC       = 0b00000000_00010000;
-        const RESOURCE_IMG_SRC         = 0b00000000_00100000;
-        const RESOURCE_MANIFEST_SRC    = 0b00000000_01000000;
-        const RESOURCE_MEDIA_SRC       = 0b00000000_10000000;
-        const RESOURCE_OBJECT_SRC      = 0b00000001_00000000;
-        const RESOURCE_SCRIPT_SRC      = 0b00000010_00000000;
-        const RESOURCE_STYLE_SRC       = 0b00000100_00000000;
-        const RESOURCE_WORKER_SRC      = 0b00001000_00000000;
-        const RESOURCE_BASE_URI        = 0b00010000_00000000;
-        const RESOURCE_FORM_ACTION     = 0b00100000_00000000;
-        const RESOURCE_FRAME_ANCESTORS = 0b01000000_00000000;
     }
 }
 
