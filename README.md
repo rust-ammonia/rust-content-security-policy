@@ -1,5 +1,17 @@
 Parse and validate Web [Content-Security-Policy level 3](https://www.w3.org/TR/CSP/)
 
+[![Crates.IO](https://img.shields.io/crates/v/content-security-policy.svg)](https://crates.rs/crates/content-security-policy)
+![Requires rustc 1.24.0](https://img.shields.io/badge/rustc-1.24.0+-green.svg)
+
+# Installation
+
+To use `content-security-policy`, add it to your project's `Cargo.toml` file:
+
+```toml
+[dependencies]
+content-security-policy = "0.0.1"
+```
+
 # Example
 
 ```rust
@@ -30,13 +42,4 @@ fn main() {
     });
     assert_eq!(check_result, CheckResult::Blocked);
 }
-```
-
-# Installation
-
-To use `content-security-policy`, add it to your project's `Cargo.toml` file:
-
-```toml
-[dependencies]
-content-security-policy = "0.0.1"
 ```
