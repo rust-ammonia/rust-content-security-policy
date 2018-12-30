@@ -1,7 +1,13 @@
-Parse and validate Web [Content-Security-Policy level 3](https://www.w3.org/TR/CSP/)
+# Parse and validate Web [Content-Security-Policy level 3](https://www.w3.org/TR/CSP/)
 
 [![Crates.IO](https://img.shields.io/crates/v/content-security-policy.svg)](https://crates.rs/crates/content-security-policy)
 ![Requires rustc 1.24.0](https://img.shields.io/badge/rustc-1.24.0+-green.svg)
+
+This function parses a CSP string into a data structure, and provides a bunch of functions you can call on it (basically all of the "hooks" defined in the CSP standard). It directly uses the `url` crate, but it's intentionally agnostic to your HTML parser and your networking stack, so there are a few things it doesn't do:
+
+* While this library does directly use `rust-url`, it is intentionally not entangled with any particular networking stack, HTML parser, or DOM implementation.
+* Rather than directly adding events to the event loop, like the spec says, it returns a `Vec<>` of objects that the library's users should push to the event loop. Just iterate over the vec, convert to your internal event representation, and push them to the event loop after calling the rust-content-security-policy function. Since the CSP specification never spins the event loop in the middle of any of its algorithms, that will be spec compliant anyway.
+* Simple algorithms that don't operate on any part of the parsed CSP data structures, like [is element nonceable](https://www.w3.org/TR/CSP/#is-element-nonceable), probably won't ever be implemented by this library. It would take as much effort for a user to convert from the HTML parser's data structure into whatever rust-content-security-policy would accept as it would take for them to just implement the algorithm themselves.
 
 # Installation
 
