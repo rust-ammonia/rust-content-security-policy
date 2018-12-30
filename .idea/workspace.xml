@@ -6,10 +6,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="6f115e2a-8453-4cdc-bbf9-a73a2a5d858a" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/tests/examples.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lib.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lib.rs" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -19,11 +17,11 @@
   </component>
   <component name="FileEditorManager">
     <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
-      <file pinned="false" current-in-tab="true">
+      <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/src/lib.rs">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="534">
-              <caret line="747" column="63" selection-start-line="747" selection-start-column="63" selection-end-line="747" selection-end-column="63" />
+            <state relative-caret-position="119">
+              <caret line="7" column="4" selection-start-line="7" selection-start-column="4" selection-end-line="18" selection-end-column="51" />
               <folding>
                 <element signature="e#1256#1257#0" expanded="true" />
                 <element signature="e#1291#1292#0" expanded="true" />
@@ -42,12 +40,21 @@
           </provider>
         </entry>
       </file>
+      <file pinned="false" current-in-tab="true">
+        <entry file="file://$PROJECT_DIR$/tests/examples.rs">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="686">
+              <caret line="71" column="43" selection-start-line="71" selection-start-column="43" selection-end-line="71" selection-end-column="43" />
+            </state>
+          </provider>
+        </entry>
+      </file>
       <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/README.md">
           <provider selected="true" editor-type-id="split-provider[text-editor;markdown-preview-editor]">
             <state split_layout="SPLIT">
               <first_editor relative-caret-position="17">
-                <caret line="1" lean-forward="true" selection-start-line="1" selection-end-line="8" selection-end-column="1" />
+                <caret line="1" selection-start-line="1" selection-end-line="8" selection-end-column="1" />
               </first_editor>
               <second_editor />
             </state>
@@ -56,11 +63,15 @@
       </file>
     </leaf>
   </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Rust File" />
+      </list>
+    </option>
+  </component>
   <component name="FindInProjectRecents">
     <findStrings>
-      <find>&amp;PolicySou</find>
-      <find>is_optional_ascii</find>
-      <find>policysource</find>
       <find>enum PolicyDisp</find>
       <find>impl CspList</find>
       <find>report_vio</find>
@@ -88,6 +99,9 @@
       <find>P&lt;scheme&gt;</find>
       <find>source_grammar</find>
       <find>host_source_grammar</find>
+      <find>port_part_match</find>
+      <find>url_port</find>
+      <find>policy</find>
     </findStrings>
     <replaceStrings>
       <replace>DoesNotMatch</replace>
@@ -104,6 +118,7 @@
         <option value="$PROJECT_DIR$/Cargo.toml" />
         <option value="$PROJECT_DIR$/README.md" />
         <option value="$PROJECT_DIR$/src/lib.rs" />
+        <option value="$PROJECT_DIR$/tests/examples.rs" />
       </list>
     </option>
   </component>
@@ -133,6 +148,11 @@
               <item name="rust-content-security-policy" type="462c0819:PsiDirectoryNode" />
               <item name="src" type="462c0819:PsiDirectoryNode" />
             </path>
+            <path>
+              <item name="rust-content-security-policy" type="b2602c69:ProjectViewProjectNode" />
+              <item name="rust-content-security-policy" type="462c0819:PsiDirectoryNode" />
+              <item name="tests" type="462c0819:PsiDirectoryNode" />
+            </path>
           </expand>
           <select />
         </subPane>
@@ -143,7 +163,7 @@
   <component name="PropertiesComponent">
     <property name="WebServerToolWindowFactoryState" value="false" />
     <property name="aspect.path.notification.shown" value="true" />
-    <property name="com.android.tools.idea.instantapp.provision.ProvisionBeforeRunTaskProvider.myTimeStamp" value="1546130130091" />
+    <property name="com.android.tools.idea.instantapp.provision.ProvisionBeforeRunTaskProvider.myTimeStamp" value="1546131358378" />
     <property name="last_opened_file_path" value="$PROJECT_DIR$" />
     <property name="nodejs_interpreter_path.stuck_in_default_project" value="undefined stuck path" />
     <property name="nodejs_npm_path_reset_for_default_project" value="true" />
@@ -196,12 +216,12 @@
       <option name="presentableId" value="Default" />
       <updated>1546029629011</updated>
       <workItem from="1546029630731" duration="10123000" />
-      <workItem from="1546040790610" duration="30385000" />
+      <workItem from="1546040790610" duration="31687000" />
     </task>
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="40508000" />
+    <option name="totallyTimeSpent" value="41810000" />
   </component>
   <component name="ToolWindowManager">
     <frame x="-8" y="-8" width="1936" height="1176" extended-state="6" />
@@ -277,7 +297,7 @@
       <provider selected="true" editor-type-id="split-provider[text-editor;markdown-preview-editor]">
         <state split_layout="SPLIT">
           <first_editor relative-caret-position="17">
-            <caret line="1" lean-forward="true" selection-start-line="1" selection-end-line="8" selection-end-column="1" />
+            <caret line="1" selection-start-line="1" selection-end-line="8" selection-end-column="1" />
           </first_editor>
           <second_editor />
         </state>
@@ -292,8 +312,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/src/lib.rs">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="534">
-          <caret line="747" column="63" selection-start-line="747" selection-start-column="63" selection-end-line="747" selection-end-column="63" />
+        <state relative-caret-position="119">
+          <caret line="7" column="4" selection-start-line="7" selection-start-column="4" selection-end-line="18" selection-end-column="51" />
           <folding>
             <element signature="e#1256#1257#0" expanded="true" />
             <element signature="e#1291#1292#0" expanded="true" />
@@ -308,6 +328,13 @@
             <element signature="e#5938#5939#0" expanded="true" />
             <element signature="e#5972#5973#0" expanded="true" />
           </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/tests/examples.rs">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="686">
+          <caret line="71" column="43" selection-start-line="71" selection-start-column="43" selection-end-line="71" selection-end-column="43" />
         </state>
       </provider>
     </entry>
