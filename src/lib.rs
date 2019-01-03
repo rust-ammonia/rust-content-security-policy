@@ -1,4 +1,4 @@
-/*!
+﻿/*!
 Parse and validate Web [Content-Security-Policy level 3](https://www.w3.org/TR/CSP/)
 
 # Example
@@ -42,62 +42,14 @@ extern crate lazy_static;
 pub use url::{Origin, Url, percent_encoding};
 use std::borrow::{Borrow, Cow};
 
-fn is_char_ascii_whitespace(c: char) -> bool {
-    c == '\u{09}' || c == '\u{0A}' || c == '\u{0C}' || c == '\u{0D}' || c == '\u{20}'
-}
-
-fn strip_leading_and_trailing_ascii_whitespace(string: &str) -> &str {
-    string.trim_matches(is_char_ascii_whitespace)
-}
-
-fn collect_a_sequence_of_non_ascii_white_space_code_points(string: &str)
-    -> (&str, &str) {
-    match string.find(is_char_ascii_whitespace) {
-        Some(i) => string.split_at(i),
-        None => (string, "")
-    }
-}
-
-struct SplitAsciiWhitespace<'a>(&'a str);
-
-impl<'a> Iterator for SplitAsciiWhitespace<'a> {
-    type Item = &'a str;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0 = self.0.trim_left_matches(is_char_ascii_whitespace);
-        let mut s = self.0.splitn(2, is_char_ascii_whitespace);
-        let next = s.next().unwrap_or("");
-        self.0 = s.next().unwrap_or("");
-        match (next.is_empty(), self.0.is_empty()) {
-            (true, true) => None,
-            (false, _) => Some(next),
-            _ => self.next(),
-        }
-    }
-}
-
-fn split_ascii_whitespace(string: &str) -> SplitAsciiWhitespace {
-    SplitAsciiWhitespace(string)
-}
-
-struct SplitCommas<'a>(&'a str);
-
-impl<'a> Iterator for SplitCommas<'a> {
-    type Item = &'a str;
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut s = self.0.splitn(2, ',');
-        let next = s.next().unwrap_or("");
-        self.0 = s.next().unwrap_or("");
-        match (next.is_empty(), self.0.is_empty()) {
-            (true, true) => None,
-            (true, false) => Some(""),
-            (false, _) => Some(next),
-        }
-    }
-}
-
-fn split_commas(string: &str) -> SplitCommas {
-    SplitCommas(string)
-}
+mod text_util;
+use text_util::{
+    strip_leading_and_trailing_ascii_whitespace,
+    split_ascii_whitespace,
+    split_commas,
+    ascii_case_insensitive_match,
+    collect_a_sequence_of_non_ascii_white_space_code_points,
+};
 
 fn scheme_is_network(scheme: &str) -> bool {
     scheme == "ftp" || scheme_is_httpx(scheme)
@@ -129,7 +81,8 @@ impl Policy {
             if token.is_empty() { continue };
             let (directive_name, token) =
                 collect_a_sequence_of_non_ascii_white_space_code_points(token);
-            let directive_name = directive_name.to_ascii_lowercase();
+            let mut directive_name = directive_name.to_owned();
+            directive_name.make_ascii_lowercase();
             if policy.contains_a_directive_whose_name_is(&directive_name) {
                 continue;
             }
@@ -1133,10 +1086,6 @@ fn scheme_part_match(a: &str, b: &str) -> MatchResult {
         ("wss", "https") => Matches,
         _ => DoesNotMatch,
     }
-}
-
-fn ascii_case_insensitive_match(a: &str, b: &str) -> bool {
-    a.to_ascii_lowercase() == b.to_ascii_lowercase()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
