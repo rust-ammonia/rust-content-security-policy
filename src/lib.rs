@@ -40,6 +40,7 @@ use regex::Regex;
 #[macro_use]
 extern crate lazy_static;
 pub use url::{Origin, Url, percent_encoding};
+use std::borrow::{Borrow, Cow};
 
 fn is_char_ascii_whitespace(c: char) -> bool {
     c == '\u{09}' || c == '\u{0A}' || c == '\u{0C}' || c == '\u{0D}' || c == '\u{20}'
@@ -187,7 +188,7 @@ impl CspList {
             if policy.disposition == PolicyDisposition::Enforce { continue };
             let violates = policy.does_request_violate_policy(request);
             if let Violates::Directive(directive) = violates {
-                let resource = request.url.clone();
+                let resource = ViolationResource::Url(request.url.clone());
                 violations.push(Violation { resource, directive });
             }
         }
@@ -205,7 +206,7 @@ impl CspList {
             let violates = policy.does_request_violate_policy(request);
             if let Violates::Directive(directive) = violates {
                 result = CheckResult::Blocked;
-                let resource = request.url.clone();
+                let resource = ViolationResource::Url(request.url.clone());
                 violations.push(Violation { resource, directive });
             }
         }
@@ -223,7 +224,7 @@ impl CspList {
             for directive in &policy.directive_set {
                 if directive.post_request_check(request, response) == CheckResult::Blocked {
                     violations.push(Violation {
-                        resource: request.url.clone(),
+                        resource: ViolationResource::Url(request.url.clone()),
                         directive: directive.clone(),
                     });
                     if policy.disposition == PolicyDisposition::Enforce {
@@ -236,7 +237,7 @@ impl CspList {
             for directive in &policy.directive_set {
                 if directive.response_check(request, response, policy) == CheckResult::Blocked {
                     violations.push(Violation {
-                        resource: request.url.clone(),
+                        resource: ViolationResource::Url(request.url.clone()),
                         directive: directive.clone(),
                     });
                     if policy.disposition == PolicyDisposition::Enforce {
@@ -247,6 +248,47 @@ impl CspList {
         }
         (result, violations)
     }
+    pub fn should_elements_inline_type_behavior_be_blocked(&self, element: &Element, type_: InlineCheckType, source: &str) -> (CheckResult, Vec<Violation>) {
+        use CheckResult::*;
+        let mut result = Allowed;
+        let mut violations = Vec::new();
+        for policy in &self.0 {
+            for directive in &policy.directive_set {
+                if directive.inline_check(element, type_, policy, source) == Allowed {
+                    continue;
+                }
+                let directive_name = get_the_effective_directive_for_inline_checks(type_);
+                let report_sample = directive.value.iter().filter(|t| &t[..] == "'report-sample'").next().is_some();
+                let violation = Violation {
+                    resource: ViolationResource::Inline{ report_sample },
+                    directive: directive.clone(),
+                };
+                if policy.disposition == PolicyDisposition::Enforce {
+                    result = Blocked;
+                }
+            }
+        }
+        (result, violations)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Element<'a> {
+    /// When there is no nonce, populate this member with `None`.
+    ///
+    /// When the element is not [nonceable], also populate it with `None`.
+    ///
+    /// [nonceable]: https://www.w3.org/TR/CSP/#is-element-nonceable
+    pub nonce: Option<Cow<'a, str>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InlineCheckType {
+    Script,
+    ScriptAttribute,
+    Style,
+    StyleAttribute,
+    Navigation,
 }
 
 /**
@@ -315,8 +357,16 @@ violation information
 */
 #[derive(Clone, Debug)]
 pub struct Violation {
-    pub resource: Url,
+    pub resource: ViolationResource,
     pub directive: Directive,
+}
+
+#[derive(Clone, Debug)]
+pub enum ViolationResource {
+    Url(Url),
+    Inline {
+        report_sample: bool,
+    },
 }
 
 
@@ -518,7 +568,101 @@ impl Directive {
         use CheckResult::*;
         Allowed
     }
+    pub fn inline_check(&self, element: &Element, type_: InlineCheckType, policy: &Policy, source: &str) -> CheckResult {
+        use CheckResult::*;
+        match &self.name[..] {
+            "default-src" => {
+                let name = get_the_effective_directive_for_inline_checks(type_);
+                if !should_fetch_directive_execute(name, "default-src", policy) {
+                    return Allowed;
+                }
+                Directive {
+                    name: name.to_owned(),
+                    value: self.value.clone()
+                }.inline_check(element, type_, policy, source)
+            }
+            "script-src" => {
+                let name = get_the_effective_directive_for_inline_checks(type_);
+                if !should_fetch_directive_execute(name, "script-src", policy) {
+                    return Allowed;
+                }
+                let source_list = SourceList(&self.value);
+                if source_list.does_element_match_source_list_for_type_and_source(element, type_, source) == DoesNotMatch {
+                    return Blocked;
+                }
+                Allowed
+            }
+            "script-src-elem" => {
+                let name = get_the_effective_directive_for_inline_checks(type_);
+                if !should_fetch_directive_execute(name, "script-src-elem", policy) {
+                    return Allowed;
+                }
+                let source_list = SourceList(&self.value);
+                if source_list.does_element_match_source_list_for_type_and_source(element, type_, source) == DoesNotMatch {
+                    return Blocked;
+                }
+                Allowed
+            }
+            "script-src-attr" => {
+                let name = get_the_effective_directive_for_inline_checks(type_);
+                if !should_fetch_directive_execute(name, "script-src-attr", policy) {
+                    return Allowed;
+                }
+                let source_list = SourceList(&self.value);
+                if source_list.does_element_match_source_list_for_type_and_source(element, type_, source) == DoesNotMatch {
+                    return Blocked;
+                }
+                Allowed
+            }
+            "style-src" => {
+                let name = get_the_effective_directive_for_inline_checks(type_);
+                if !should_fetch_directive_execute(name, "style-src", policy) {
+                    return Allowed;
+                }
+                let source_list = SourceList(&self.value);
+                if source_list.does_element_match_source_list_for_type_and_source(element, type_, source) == DoesNotMatch {
+                    return Blocked;
+                }
+                Allowed
+            }
+            "style-src-elem" => {
+                let name = get_the_effective_directive_for_inline_checks(type_);
+                if !should_fetch_directive_execute(name, "style-src-elem", policy) {
+                    return Allowed;
+                }
+                let source_list = SourceList(&self.value);
+                if source_list.does_element_match_source_list_for_type_and_source(element, type_, source) == DoesNotMatch {
+                    return Blocked;
+                }
+                Allowed
+            }
+            "style-src-attr" => {
+                let name = get_the_effective_directive_for_inline_checks(type_);
+                if !should_fetch_directive_execute(name, "style-src-attr", policy) {
+                    return Allowed;
+                }
+                let source_list = SourceList(&self.value);
+                if source_list.does_element_match_source_list_for_type_and_source(element, type_, source) == DoesNotMatch {
+                    return Blocked;
+                }
+                Allowed
+            }
+            _ => Allowed
+        }
+    }
 }
+
+fn get_the_effective_directive_for_inline_checks(type_: InlineCheckType) -> &'static str {
+    use InlineCheckType::*;
+    match type_ {
+        Script | Navigation => "script-src-elem",
+        ScriptAttribute => "script-src-attr",
+        Style => "style-src-elem",
+        StyleAttribute => "style-src-attr",
+        _ => "",
+    }
+}
+
 fn script_directives_prerequest_check(request: &Request, directive: &Directive) -> CheckResult {
     use CheckResult::*;
     if request_is_script_like(request) {
@@ -634,7 +778,6 @@ pub enum MatchResult {
 }
 use MatchResult::Matches;
 use MatchResult::DoesNotMatch;
-use std::borrow::Borrow;
 
 lazy_static!{
     static ref NONCE_SOURCE_GRAMMAR: Regex =
@@ -693,6 +836,76 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
         }
         DoesNotMatch
     }
+    fn does_element_match_source_list_for_type_and_source(
+        &self,
+        element: &Element,
+        type_: InlineCheckType,
+        source: &str,
+    ) -> MatchResult {
+        if self.does_a_source_list_allow_all_inline_behavior_for_type(type_) == AllowResult::Allows {
+            return Matches;
+        }
+        if type_ == InlineCheckType::Script || type_ == InlineCheckType::Style {
+            if let Some(nonce) = element.nonce.as_ref() {
+                for expression in self.0.clone().into_iter().map(Borrow::borrow) {
+                    if let Some(captures) = NONCE_SOURCE_GRAMMAR.captures(expression.borrow()) {
+                        if let Some(captured_nonce) = captures.name("n") {
+                            if nonce == captured_nonce.as_str() {
+                                return Matches;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let mut unsafe_hashes = false;
+        for expression in self.0.clone().into_iter().map(Borrow::borrow) {
+            if ascii_case_insensitive_match(expression, "'unsafe-hashes'") {
+                unsafe_hashes = true;
+                break;
+            }
+        }
+        if type_ == InlineCheckType::Script || type_ == InlineCheckType::Style || unsafe_hashes {
+            for expression in self.0.clone().into_iter().map(Borrow::borrow) {
+                if let Some(captures) = HASH_SOURCE_GRAMMAR.captures(expression.borrow()) {
+                    if let (Some(algorithm), Some(value)) = (captures.name("algorithm").and_then(|a| HashAlgorithm::from_name(a.as_str())), captures.name("value")) {
+                        let actual = algorithm.apply(source);
+                        let expected = value.as_str().replace('-', "+").replace('_', "/");
+                        if actual == expected {
+                            return Matches;
+                        }
+                    }
+                }
+            }
+        }
+        DoesNotMatch
+    }
+    fn does_a_source_list_allow_all_inline_behavior_for_type(&self, type_: InlineCheckType) -> AllowResult {
+        use InlineCheckType::*;
+        let mut allow_all_inline = false;
+        for expression in self.0.clone().into_iter().map(Borrow::borrow) {
+            if HASH_SOURCE_GRAMMAR.is_match(expression) || NONCE_SOURCE_GRAMMAR.is_match(expression) {
+                return AllowResult::DoesNotAllow;
+            }
+            if (type_ == Script || type_ == ScriptAttribute || type_ == Navigation) && expression == "'strict-dynamic'" {
+                return AllowResult::DoesNotAllow;
+            }
+            if ascii_case_insensitive_match(expression, "'unsafe-inline'") {
+                allow_all_inline = true;
+            }
+        }
+        if allow_all_inline {
+            AllowResult::Allows
+        } else {
+            AllowResult::DoesNotAllow
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AllowResult {
+    Allows,
+    DoesNotAllow,
 }
 
 fn does_url_match_expression_in_origin_with_redirect_count(
@@ -942,6 +1155,9 @@ impl HashAlgorithm {
             "sha512" | "Sha512" | "sHa512" | "shA512" | "SHa512" | "sHA512" | "SHA512" => Some(Sha512),
             _ => None,
         }
+    }
+    pub fn apply(self, value: &str) -> String {
+        unimplemented!();
     }
 }
 
