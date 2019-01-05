@@ -279,7 +279,7 @@ pub struct Element<'a> {
     /// When the element is not [nonceable], also populate it with `None`.
     ///
     /// [nonceable]: https://www.w3.org/TR/CSP/#is-element-nonceable
-    nonce: Option<Cow<'a, str>>,
+    pub nonce: Option<Cow<'a, str>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
