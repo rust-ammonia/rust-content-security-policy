@@ -242,6 +242,18 @@ test_should_request_be_blocked!{
         policy: "default-src www.notriddle2.com",
         dest: Worker,
         result: Blocked),
+    (   name: pre_request_default_xslt_allow,
+        url: "https://www.notriddle2.com/child/",
+        origin: "https://www.notriddle.com",
+        policy: "default-src www.notriddle2.com",
+        dest: Xslt,
+        result: Allowed),
+    (   name: pre_request_default_xslt_block,
+        url: "https://www.evil.com/child/",
+        origin: "https://www.notriddle.com",
+        policy: "default-src www.notriddle2.com",
+        dest: Xslt,
+        result: Blocked),
 }
 
 macro_rules! test_should_elements_inline_type_behavior_be_blocked {

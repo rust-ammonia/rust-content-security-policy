@@ -664,7 +664,7 @@ fn script_directives_prerequest_check(request: &Request, directive: &Directive) 
 fn request_is_script_like(request: &Request) -> bool {
     use Destination::*;
     match request.destination {
-        AudioWorklet | PaintWorklet | Script | ServiceWorker | SharedWorker | Worker => true,
+        AudioWorklet | PaintWorklet | Script | ServiceWorker | SharedWorker | Worker | Xslt => true,
         _ => false
     }
 }
