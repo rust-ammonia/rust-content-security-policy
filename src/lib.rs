@@ -696,7 +696,7 @@ fn get_fetch_directive_fallback_list(directive_name: &str) -> &'static [&'static
         "frame-src"       => &["frame-src", "default-src"],
         "media-src"       => &["media-src", "default-src"],
         "font-src"        => &["font-src", "default-src"],
-        "image-src"       => &["image-src", "default-src"],
+        "img-src"         => &["img-src", "default-src"],
         _                 => &[],
     }
 }
