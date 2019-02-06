@@ -12,7 +12,7 @@ repository = "https://github.com/notriddle/rust-content-security-policy"
 [dependencies]
 url = "1.7"
 regex = "1.1"
-lazy_static = "1.1"
+lazy_static = "1.2"
 
 [dev-dependencies]
-version-sync = "0.6"
+version-sync = "0.7"

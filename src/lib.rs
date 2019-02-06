@@ -1,4 +1,4 @@
-﻿/*!
+/*!
 Parse and validate Web [Content-Security-Policy level 3](https://www.w3.org/TR/CSP/)
 
 # Example
@@ -33,6 +33,8 @@ fn main() {
 }
 ```
 */
+
+#![forbid(unsafe_code)]
 
 pub extern crate url;
 extern crate regex;
