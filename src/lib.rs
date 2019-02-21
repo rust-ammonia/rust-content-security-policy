@@ -695,7 +695,7 @@ fn get_fetch_directive_fallback_list(directive_name: &str) -> &'static [&'static
         "manifest-src"    => &["manifest-src", "default-src"],
         "prefetch-src"    => &["prefetch-src", "default-src"],
         "object-src"      => &["object-src", "default-src"],
-        "frame-src"       => &["frame-src", "default-src"],
+        "frame-src"       => &["frame-src", "child-src", "default-src"],
         "media-src"       => &["media-src", "default-src"],
         "font-src"        => &["font-src", "default-src"],
         "img-src"         => &["img-src", "default-src"],
