@@ -16,6 +16,8 @@ fn sandbox_test_block() {
         },
         &Response {
             csp_list: csp_list.clone(),
+            url: Url::parse("https://example.com").unwrap(),
+            redirect_count: 0
         }
     );
     assert_eq!(check_result, CheckResult::Blocked);
@@ -36,6 +38,8 @@ fn sandbox_test_block_with_allow_popups() {
         },
         &Response {
             csp_list: csp_list.clone(),
+            redirect_count: 0,
+            url: Url::parse("https://example.com").unwrap(),
         }
     );
     assert_eq!(check_result, CheckResult::Blocked);
@@ -56,6 +60,8 @@ fn sandbox_test_allow_with_no_directive() {
         },
         &Response {
             csp_list: csp_list.clone(),
+            redirect_count: 0,
+            url: Url::parse("https://example.com").unwrap(),
         }
     );
     assert_eq!(check_result, CheckResult::Allowed);
@@ -77,6 +83,8 @@ fn sandbox_test_allow_images() {
         },
         &Response {
             csp_list: csp_list.clone(),
+            redirect_count: 0,
+            url: Url::parse("https://example.com").unwrap(),
         }
     );
     assert_eq!(check_result, CheckResult::Allowed);
