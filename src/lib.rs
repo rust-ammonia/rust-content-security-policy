@@ -46,7 +46,9 @@ extern crate bitflags;
 pub use url::{Origin, Url, percent_encoding};
 use std::borrow::{Borrow, Cow};
 
-mod text_util;
+pub mod text_util;
+pub mod sandboxing_directive;
+
 use text_util::{
     strip_leading_and_trailing_ascii_whitespace,
     split_ascii_whitespace,
@@ -54,6 +56,8 @@ use text_util::{
     ascii_case_insensitive_match,
     collect_a_sequence_of_non_ascii_white_space_code_points,
 };
+
+use sandboxing_directive::{SandboxingFlagSet, parse_a_sandboxing_directive};
 
 fn scheme_is_network(scheme: &str) -> bool {
     scheme == "ftp" || scheme_is_httpx(scheme)
@@ -179,7 +183,7 @@ impl CspList {
         let mut violations = Vec::new();
         for policy in &self.0 {
             for directive in &policy.directive_set {
-                if directive.post_request_check(request, response) == CheckResult::Blocked {
+                if directive.post_request_check(request, response, policy) == CheckResult::Blocked {
                     violations.push(Violation {
                         resource: ViolationResource::Url(request.url.clone()),
                         directive: directive.clone(),
@@ -214,12 +218,12 @@ impl CspList {
                 if directive.inline_check(element, type_, policy, source) == Allowed {
                     continue;
                 }
-                let directive_name = get_the_effective_directive_for_inline_checks(type_);
                 let report_sample = directive.value.iter().filter(|t| &t[..] == "'report-sample'").next().is_some();
                 let violation = Violation {
                     resource: ViolationResource::Inline{ report_sample },
                     directive: directive.clone(),
                 };
+                violations.push(violation);
                 if policy.disposition == PolicyDisposition::Enforce {
                     result = Blocked;
                 }
@@ -307,6 +311,8 @@ response to be validated
 #[derive(Clone, Debug)]
 pub struct Response {
     pub csp_list: CspList,
+    pub url: Url,
+    pub redirect_count: u32,
 }
 
 /**
@@ -517,9 +523,172 @@ impl Directive {
             _ => Allowed,
         }
     }
-    pub fn post_request_check(&self, _request: &Request, _response: &Response) -> CheckResult {
+    pub fn post_request_check(&self, request: &Request, response: &Response, policy: &Policy) -> CheckResult {
         use CheckResult::*;
-        Allowed
+        match &self.name[..] {
+            "child-src" => {
+                let name = get_the_effective_directive_for_request(request);
+                if !should_fetch_directive_execute(name, "child-src", policy) {
+                    return Allowed;
+                }
+                Directive {
+                    name: name.to_owned(),
+                    value: self.value.clone()
+                }.post_request_check(request, response, policy)
+            }
+            "connect-src" => {
+                let name = get_the_effective_directive_for_request(request);
+                if !should_fetch_directive_execute(name, "connect-src", policy) {
+                    return Allowed;
+                }
+                let source_list = SourceList(&self.value);
+                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                    return Blocked;
+                }
+                Allowed
+            }
+            "default-src" => {
+                let name = get_the_effective_directive_for_request(request);
+                if !should_fetch_directive_execute(name, "default-src", policy) {
+                    return Allowed;
+                }
+                Directive {
+                    name: name.to_owned(),
+                    value: self.value.clone(),
+                }.post_request_check(request, response, policy)
+            }
+            "font-src" => {
+                let name = get_the_effective_directive_for_request(request);
+                if !should_fetch_directive_execute(name, "font-src", policy) {
+                    return Allowed;
+                }
+                let source_list = SourceList(&self.value);
+                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                    return Blocked;
+                }
+                Allowed
+            }
+            "frame-src" => {
+                let name = get_the_effective_directive_for_request(request);
+                if !should_fetch_directive_execute(name, "frame-src", policy) {
+                    return Allowed;
+                }
+                let source_list = SourceList(&self.value);
+                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                    return Blocked;
+                }
+                Allowed
+            }
+            "img-src" => {
+                let name = get_the_effective_directive_for_request(request);
+                if !should_fetch_directive_execute(name, "img-src", policy) {
+                    return Allowed;
+                }
+                let source_list = SourceList(&self.value);
+                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                    return Blocked;
+                }
+                Allowed
+            }
+            "manifest-src" => {
+                let name = get_the_effective_directive_for_request(request);
+                if !should_fetch_directive_execute(name, "manifest-src", policy) {
+                    return Allowed;
+                }
+                let source_list = SourceList(&self.value);
+                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                    return Blocked;
+                }
+                Allowed
+            }
+            "media-src" => {
+                let name = get_the_effective_directive_for_request(request);
+                if !should_fetch_directive_execute(name, "media-src", policy) {
+                    return Allowed;
+                }
+                let source_list = SourceList(&self.value);
+                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                    return Blocked;
+                }
+                Allowed
+            }
+            "prefetch-src" => {
+                let name = get_the_effective_directive_for_request(request);
+                if !should_fetch_directive_execute(name, "prefetch-src", policy) {
+                    return Allowed;
+                }
+                let source_list = SourceList(&self.value);
+                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                    return Blocked;
+                }
+                Allowed
+            }
+            "object-src" => {
+                let name = get_the_effective_directive_for_request(request);
+                if !should_fetch_directive_execute(name, "object-src", policy) {
+                    return Allowed;
+                }
+                let source_list = SourceList(&self.value);
+                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                    return Blocked;
+                }
+                Allowed
+            }
+            "script-src" => {
+                let name = get_the_effective_directive_for_request(request);
+                if !should_fetch_directive_execute(name, "script-src", policy) {
+                    return Allowed;
+                }
+                script_directives_postrequest_check(request, response, self)
+            }
+            "script-src-elem" => {
+                let name = get_the_effective_directive_for_request(request);
+                if !should_fetch_directive_execute(name, "script-src-elem", policy) {
+                    return Allowed;
+                }
+                script_directives_postrequest_check(request, response, self)
+            }
+            "style-src" => {
+                let name = get_the_effective_directive_for_request(request);
+                if !should_fetch_directive_execute(name, "style-src", policy) {
+                    return Allowed;
+                }
+                let source_list = SourceList(&self.value);
+                if source_list.does_nonce_match_source_list(&request.nonce) == Matches {
+                    return Allowed;
+                }
+                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                    return Blocked;
+                }
+                Allowed
+            }
+            "style-src-elem" => {
+                let name = get_the_effective_directive_for_request(request);
+                if !should_fetch_directive_execute(name, "style-src-elem", policy) {
+                    return Allowed;
+                }
+                let source_list = SourceList(&self.value);
+                if source_list.does_nonce_match_source_list(&request.nonce) == Matches {
+                    return Allowed;
+                }
+                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                    return Blocked;
+                }
+                Allowed
+            }
+            "worker-src" => {
+                let name = get_the_effective_directive_for_request(request);
+                if !should_fetch_directive_execute(name, "worker-src", policy) {
+                    return Allowed;
+                }
+                let source_list = SourceList(&self.value);
+                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                    return Blocked;
+                }
+                Allowed
+            }
+            _ => Allowed,
+        }
     }
     pub fn response_check(&self, request: &Request, _response: &Response, policy: &Policy) -> CheckResult {
         use CheckResult::*;
@@ -636,7 +805,6 @@ fn get_the_effective_directive_for_inline_checks(type_: InlineCheckType) -> &'st
         ScriptAttribute => "script-src-attr",
         Style => "style-src-elem",
         StyleAttribute => "style-src-attr",
-        _ => "",
     }
 }
 
@@ -679,6 +847,23 @@ fn script_directives_prerequest_check(request: &Request, directive: &Directive) 
             }
         }
         if source_list.does_request_match_source_list(request) == DoesNotMatch {
+            return Blocked;
+        }
+    }
+    Allowed
+}
+
+fn script_directives_postrequest_check(request: &Request, response: &Response, directive: &Directive) -> CheckResult {
+    use CheckResult::*;
+    if request_is_script_like(request) {
+        let source_list = SourceList(&directive.value[..]);
+        if source_list.does_nonce_match_source_list(&request.nonce) == Matches {
+            return Allowed;
+        }
+        if directive.value.iter().filter(|ex| ascii_case_insensitive_match(ex, "'strict-dynamic'")).next().is_some() && request.parser_metadata != ParserMetadata::ParserInserted {
+            return Allowed;
+        }
+        if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
             return Blocked;
         }
     }
@@ -755,7 +940,6 @@ pub enum MatchResult {
 }
 use MatchResult::Matches;
 use MatchResult::DoesNotMatch;
-use ::PolicyDisposition::Enforce;
 
 lazy_static!{
     static ref NONCE_SOURCE_GRAMMAR: Regex =
@@ -877,6 +1061,16 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
         } else {
             AllowResult::DoesNotAllow
         }
+    }
+    fn does_response_to_request_match_source_list(
+        &self,
+        request: &Request,
+        response: &Response) -> MatchResult {
+        self.does_url_match_source_list_in_origin_with_redirect_count(
+            &response.url,
+            &request.origin,
+            response.redirect_count,
+        )
     }
 }
 
@@ -1130,7 +1324,7 @@ impl HashAlgorithm {
             _ => None,
         }
     }
-    pub fn apply(self, value: &str) -> String {
+    pub fn apply(self, _value: &str) -> String {
         unimplemented!();
     }
 }
@@ -1168,63 +1362,4 @@ pub fn parse_subresource_integrity_metadata(string: &str) -> SubresourceIntegrit
     } else {
         SubresourceIntegrityMetadata::IntegritySources(result)
     }
-}
-
-bitflags!{
-    pub struct SandboxingFlagSet: u32 {
-        const SANDBOXED_NAVIGATION_BROWSING_CONTEXT_FLAG = 0x00000001;
-        const SANDBOXED_AUXILIARY_NAVIGATION_BROWSING_CONTEXT_FLAG = 0x00000002;
-        const SANDBOXED_TOP_LEVEL_NAVIGATION_WITHOUT_USER_ACTIVATION_BROWSING_CONTEXT_FLAG
-            = 0x00000004;
-        const SANDBOXED_TOP_LEVEL_NAVIGATION_WITH_USER_ACTIVATION_BROWSING_CONTEXT_FLAG
-            = 0x00000008;
-        const SANDBOXED_PLUGINS_BROWSING_CONTEXT_FLAG = 0x00000010;
-        const SANDBOXED_ORIGIN_BROWSING_CONTEXT_FLAG = 0x00000020;
-        const SANDBOXED_FORMS_BROWSING_CONTEXT_FLAG = 0x00000040;
-        const SANDBOXED_POINTER_LOCK_BROWSING_CONTEXT_FLAG = 0x00000080;
-        const SANDBOXED_SCRIPTS_BROWSING_CONTEXT_FLAG = 0x00000100;
-        const SANDBOXED_AUTOMATIC_FEATURES_BROWSING_CONTEXT_FLAG = 0x00000200;
-        const SANDBOXED_STORAGE_AREA_URLS_FLAG = 0x00000400;
-        const SANDBOXED_DOCUMENT_DOMAIN_BROWSING_CONTEXT_FLAG = 0x00000800;
-        const SANDBOX_PROPOGATES_TO_AUXILIARY_BROWSING_CONTEXTS_FLAG = 0x00001000;
-        const SANDBOXED_MODALS_FLAG = 0x00002000;
-        const SANDBOXED_ORIENTATION_LOCK_BROWSING_CONTEXT_FLAG = 0x00004000;
-        const SANDBOXED_PRESENTATION_BROWSING_CONTEXT_FLAG = 0x00008000;
-    }
-}
-
-pub fn parse_a_sandboxing_directive(tokens: &[String]) -> SandboxingFlagSet {
-    let mut output = SandboxingFlagSet::all();
-    for token in tokens {
-        let remove = match &token[..] {
-            "allow-popups" =>
-                SandboxingFlagSet::SANDBOXED_AUXILIARY_NAVIGATION_BROWSING_CONTEXT_FLAG,
-            "allow-top-navigation" =>
-                SandboxingFlagSet::SANDBOXED_TOP_LEVEL_NAVIGATION_WITHOUT_USER_ACTIVATION_BROWSING_CONTEXT_FLAG,
-            "allow-top-navigation-by-user-activation" | "allow-top-navigation" =>
-                SandboxingFlagSet::SANDBOXED_TOP_LEVEL_NAVIGATION_WITH_USER_ACTIVATION_BROWSING_CONTEXT_FLAG,
-            "allow-same-origin" =>
-                SandboxingFlagSet::SANDBOXED_ORIGIN_BROWSING_CONTEXT_FLAG,
-            "allow-forms" =>
-                SandboxingFlagSet::SANDBOXED_FORMS_BROWSING_CONTEXT_FLAG,
-            "allow-pointer-lock" =>
-                SandboxingFlagSet::SANDBOXED_POINTER_LOCK_BROWSING_CONTEXT_FLAG,
-            "allow-scripts" =>
-                SandboxingFlagSet::SANDBOXED_SCRIPTS_BROWSING_CONTEXT_FLAG,
-            "allow-scripts" =>
-                SandboxingFlagSet::SANDBOXED_AUTOMATIC_FEATURES_BROWSING_CONTEXT_FLAG,
-            "allow-popups-to-escape-sandbox" =>
-                SandboxingFlagSet::SANDBOX_PROPOGATES_TO_AUXILIARY_BROWSING_CONTEXTS_FLAG,
-            "allow-modals" =>
-                SandboxingFlagSet::SANDBOXED_MODALS_FLAG,
-            "allow-orientation-lock" =>
-                SandboxingFlagSet::SANDBOXED_ORIENTATION_LOCK_BROWSING_CONTEXT_FLAG,
-            "allow-presentation" =>
-                SandboxingFlagSet::SANDBOXED_PRESENTATION_BROWSING_CONTEXT_FLAG,
-            _ =>
-                SandboxingFlagSet::empty(),
-        };
-        output.remove(remove);
-    }
-    output
 }
