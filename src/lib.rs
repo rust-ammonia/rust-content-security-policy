@@ -43,12 +43,15 @@ use regex::Regex;
 extern crate lazy_static;
 #[macro_use]
 extern crate bitflags;
-pub use url::{Origin, Url, percent_encoding};
-use std::borrow::{Borrow, Cow};
+#[cfg(feature = "quickcheck")]
+extern crate quickcheck;
 
 pub mod text_util;
 pub mod sandboxing_directive;
 
+pub use url::{Origin, Url, percent_encoding};
+use std::borrow::{Borrow, Cow};
+use std::fmt::{self, Display, Formatter};
 use text_util::{
     strip_leading_and_trailing_ascii_whitespace,
     split_ascii_whitespace,
@@ -56,8 +59,12 @@ use text_util::{
     ascii_case_insensitive_match,
     collect_a_sequence_of_non_ascii_white_space_code_points,
 };
-
 use sandboxing_directive::{SandboxingFlagSet, parse_a_sandboxing_directive};
+use MatchResult::Matches;
+use MatchResult::DoesNotMatch;
+#[cfg(feature = "quickcheck")]
+use quickcheck::{Arbitrary, Gen, Rng};
+use std::collections::HashSet;
 
 fn scheme_is_network(scheme: &str) -> bool {
     scheme == "ftp" || scheme_is_httpx(scheme)
@@ -70,6 +77,8 @@ fn scheme_is_httpx(scheme: &str) -> bool {
 /**
 A single parsed content security policy
 */
+#[cfg_attr(feature = "quickcheck", derive(Arbitrary))]
+#[cfg_attr(feature = "quickcheck", arbitrary(constraint = "self.is_valid()"))]
 #[derive(Clone, Debug)]
 pub struct Policy {
     pub directive_set: Vec<Directive>,
@@ -77,7 +86,24 @@ pub struct Policy {
     pub source: PolicySource,
 }
 
+impl Display for Policy {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
+        for (i, directive) in self.directive_set.iter().enumerate() {
+            if i != 0 {
+                write!(f, ";")?;
+            }
+            <Directive as Display>::fmt(directive, f)?;
+        }
+        Ok(())
+    }
+}
+
 impl Policy {
+    pub fn is_valid(&self) -> bool {
+        self.directive_set.iter().all(Directive::is_valid) &&
+            self.directive_set.iter().map(|d| d.name.clone()).collect::<HashSet<_>>().len() == self.directive_set.len() &&
+            !self.directive_set.is_empty()
+    }
     pub fn parse(serialized: &str, source: PolicySource, disposition: PolicyDisposition) -> Policy {
         let mut policy = Policy {
             directive_set: Vec::new(),
@@ -117,10 +143,27 @@ impl Policy {
     }
 }
 
+#[cfg_attr(feature = "quickcheck", derive(Arbitrary))]
+#[cfg_attr(feature = "quickcheck", arbitrary(constraint = "self.is_valid()"))]
 #[derive(Clone, Debug)]
 pub struct CspList(pub Vec<Policy>);
 
+impl Display for CspList {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
+        for (i, directive) in self.0.iter().enumerate() {
+            if i != 0 {
+                write!(f, ",")?;
+            }
+            <Policy as Display>::fmt(directive, f)?;
+        }
+        Ok(())
+    }
+}
+
 impl CspList {
+    pub fn is_valid(&self) -> bool {
+        self.0.iter().all(Policy::is_valid)
+    }
     pub fn contains_a_header_delivered_content_security_policy(&self) -> bool {
         self.0.iter().any(|policy| policy.source == PolicySource::Header)
     }
@@ -345,12 +388,14 @@ pub enum Violates {
     Directive(Directive),
 }
 
+#[cfg_attr(feature = "quickcheck", derive(Arbitrary))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PolicyDisposition {
     Enforce,
     Report,
 }
 
+#[cfg_attr(feature = "quickcheck", derive(Arbitrary))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PolicySource {
     Header,
@@ -363,7 +408,56 @@ pub struct Directive {
     value: Vec<String>,
 }
 
+#[cfg(feature = "quickcheck")]
+impl Arbitrary for Directive {
+    fn arbitrary<G: Gen>(g: &mut G) -> Self {
+        let valid_in_name = "0123456789-abcdefghijklmnopqrstuvwxyz";
+        let name_len = g.gen_range(1, 50);
+        let mut name = String::with_capacity(name_len);
+        while name.len() < name_len {
+            let c = valid_in_name.as_bytes()[g.gen_range(0, valid_in_name.len())] as char;
+            name.push(c);
+        }
+        let len = g.gen_range(1, 50);
+        let mut value = Vec::with_capacity(len);
+        while value.len() < len {
+            let token_len = g.gen_range(1, 50);
+            let mut token = String::with_capacity(token_len);
+            while token.len() < token_len {
+                let valid_in_value = "0123456789-abcdefghijklmnopqrstuvwxyz:/.?~!@&%";
+                let c = valid_in_value.as_bytes()[g.gen_range(0, valid_in_value.len())] as char;
+                token.push(c);
+            }
+            value.push(token);
+        }
+        let ret_val = Directive {
+            name, value
+        };
+        if !ret_val.is_valid() {
+            dbg!(ret_val);
+            panic!("!ret_val.is_valid()");
+        }
+        ret_val
+    }
+}
+
+impl Display for Directive {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
+        <str as Display>::fmt(&self.name[..], f)?;
+        write!(f, " ")?;
+        for token in &self.value {
+            <str as Display>::fmt(&token[..], f)?;
+            write!(f, " ")?;
+        }
+        Ok(())
+    }
+}
+
 impl Directive {
+    pub fn is_valid(&self) -> bool {
+        DIRECTIVE_NAME_GRAMMAR.is_match(&self.name) &&
+            self.value.iter().all(|t| DIRECTIVE_VALUE_TOKEN_GRAMMAR.is_match(&t[..]))
+    }
     pub fn pre_request_check(&self, request: &Request, policy: &Policy) -> CheckResult {
         use CheckResult::*;
         match &self.name[..] {
@@ -938,10 +1032,12 @@ pub enum MatchResult {
     Matches,
     DoesNotMatch,
 }
-use MatchResult::Matches;
-use MatchResult::DoesNotMatch;
 
 lazy_static!{
+    static ref DIRECTIVE_NAME_GRAMMAR: Regex =
+        Regex::new(r#"^[0-9a-z\-]+$"#).unwrap();
+    static ref DIRECTIVE_VALUE_TOKEN_GRAMMAR: Regex =
+        Regex::new(r#"^[\u{21}-\u{2B}\u{2D}-\u{3A}\u{3C}-\u{7E}]+$"#).unwrap();
     static ref NONCE_SOURCE_GRAMMAR: Regex =
         Regex::new(r#"^'nonce-(?P<n>[a-zA-Z0-9\+/\-_]+=*)'$"#).unwrap();
     static ref NONE_SOURCE_GRAMMAR: Regex =
@@ -1361,5 +1457,45 @@ pub fn parse_subresource_integrity_metadata(string: &str) -> SubresourceIntegrit
         SubresourceIntegrityMetadata::NoMetadata
     } else {
         SubresourceIntegrityMetadata::IntegritySources(result)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn empty_directive_is_not_valid() {
+        let d = Directive {
+            name: String::new(),
+            value: Vec::new(),
+        };
+        assert!(!d.is_valid());
+    }
+    #[test]
+    pub fn duplicate_policy_is_not_valid() {
+        let d = Directive {
+            name: "test".to_owned(),
+            value: vec!["test".to_owned()],
+        };
+        let p = Policy {
+            directive_set: vec![d.clone(), d.clone()],
+            disposition: PolicyDisposition::Enforce,
+            source: PolicySource::Header,
+        };
+        assert!(!p.is_valid());
+    }
+    #[test]
+    pub fn basic_policy_is_valid() {
+        let p = Policy::parse("script-src notriddle.com", PolicySource::Header, PolicyDisposition::Enforce);
+        assert!(p.is_valid());
+    }
+    #[test]
+    pub fn policy_with_empty_directive_set_is_not_valid() {
+        let p = Policy {
+            directive_set: vec![],
+            disposition: PolicyDisposition::Enforce,
+            source: PolicySource::Header,
+        };
+        assert!(!p.is_valid());
     }
 }
