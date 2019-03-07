@@ -10,3 +10,10 @@ branches:
   - master
   - staging
   - trying
+
+env:
+ - QUICKCHECK_MAX_TESTS=10
+
+script:
+ - cargo build
+ - if [[ $TRAVIS_RUST_VERSION = "1.24.0" ]]; then cargo test; else cargo test --features "version-sync quickcheck"; fi
