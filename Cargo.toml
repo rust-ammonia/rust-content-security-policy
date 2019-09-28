@@ -10,7 +10,8 @@ documentation = "https://docs.rs/content-security-policy/"
 repository = "https://github.com/notriddle/rust-content-security-policy"
 
 [dependencies]
-url = "1.7"
+url = "2"
+percent-encoding = "2.1"
 regex = "1.1"
 lazy_static = "1.2"
 bitflags = "1.0.4"
