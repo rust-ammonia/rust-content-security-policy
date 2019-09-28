@@ -37,6 +37,7 @@ fn main() {
 #![forbid(unsafe_code)]
 
 pub extern crate url;
+pub extern crate percent_encoding;
 extern crate regex;
 use regex::Regex;
 #[macro_use]
@@ -49,7 +50,7 @@ extern crate quickcheck;
 pub mod text_util;
 pub mod sandboxing_directive;
 
-pub use url::{Origin, Url, percent_encoding};
+pub use url::{Origin, Url};
 use std::borrow::{Borrow, Cow};
 use std::fmt::{self, Display, Formatter};
 use text_util::{
