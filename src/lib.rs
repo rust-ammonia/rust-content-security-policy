@@ -343,6 +343,16 @@ pub enum Destination {
     Xslt,
 }
 
+impl Destination {
+    pub fn is_script_like(self) -> bool {
+        use Destination::*;
+        match self {
+            AudioWorklet | PaintWorklet | Script | ServiceWorker | SharedWorker | Worker | Xslt => true,
+            _ => false
+        }
+    }
+}
+
 /**
 response to be validated
 */
@@ -925,11 +935,7 @@ fn script_directives_postrequest_check(request: &Request, response: &Response, d
 }
 
 fn request_is_script_like(request: &Request) -> bool {
-    use Destination::*;
-    match request.destination {
-        AudioWorklet | PaintWorklet | Script | ServiceWorker | SharedWorker | Worker | Xslt => true,
-        _ => false
-    }
+    request.destination.is_script_like()
 }
 
 fn should_fetch_directive_execute(effective_directive_name: &str, directive_name: &str, policy: &Policy) -> bool {
