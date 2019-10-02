@@ -1,4 +1,4 @@
-/*!
+﻿/*!
 Parse and validate Web [Content-Security-Policy level 3](https://www.w3.org/TR/CSP/)
 
 # Example
@@ -44,13 +44,12 @@ use regex::Regex;
 extern crate lazy_static;
 #[macro_use]
 extern crate bitflags;
-#[cfg(feature = "quickcheck")]
-extern crate quickcheck;
 
 pub mod text_util;
 pub mod sandboxing_directive;
 
 pub use url::{Origin, Url};
+#[cfg(feature = "quickcheck")] use serde::{Deserialize, Serialize};
 use std::borrow::{Borrow, Cow};
 use std::fmt::{self, Display, Formatter};
 use text_util::{
@@ -63,8 +62,6 @@ use text_util::{
 use sandboxing_directive::{SandboxingFlagSet, parse_a_sandboxing_directive};
 use MatchResult::Matches;
 use MatchResult::DoesNotMatch;
-#[cfg(feature = "quickcheck")]
-use quickcheck::{Arbitrary, Gen, Rng};
 use std::collections::HashSet;
 
 fn scheme_is_network(scheme: &str) -> bool {
@@ -78,8 +75,6 @@ fn scheme_is_httpx(scheme: &str) -> bool {
 /**
 A single parsed content security policy
 */
-#[cfg_attr(feature = "quickcheck", derive(Arbitrary))]
-#[cfg_attr(feature = "quickcheck", arbitrary(constraint = "self.is_valid()"))]
 #[derive(Clone, Debug)]
 pub struct Policy {
     pub directive_set: Vec<Directive>,
@@ -144,8 +139,6 @@ impl Policy {
     }
 }
 
-#[cfg_attr(feature = "quickcheck", derive(Arbitrary))]
-#[cfg_attr(feature = "quickcheck", arbitrary(constraint = "self.is_valid()"))]
 #[derive(Clone, Debug)]
 pub struct CspList(pub Vec<Policy>);
 
@@ -326,6 +319,7 @@ pub enum Initiator {
     None,
 }
 
+#[cfg_attr(feature = "quickcheck", derive(Deserialize, Serialize))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Destination {
     None,
@@ -389,14 +383,12 @@ pub enum Violates {
     Directive(Directive),
 }
 
-#[cfg_attr(feature = "quickcheck", derive(Arbitrary))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PolicyDisposition {
     Enforce,
     Report,
 }
 
-#[cfg_attr(feature = "quickcheck", derive(Arbitrary))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PolicySource {
     Header,
@@ -407,39 +399,6 @@ pub enum PolicySource {
 pub struct Directive {
     name: String,
     value: Vec<String>,
-}
-
-#[cfg(feature = "quickcheck")]
-impl Arbitrary for Directive {
-    fn arbitrary<G: Gen>(g: &mut G) -> Self {
-        let valid_in_name = "0123456789-abcdefghijklmnopqrstuvwxyz";
-        let name_len = g.gen_range(1, 50);
-        let mut name = String::with_capacity(name_len);
-        while name.len() < name_len {
-            let c = valid_in_name.as_bytes()[g.gen_range(0, valid_in_name.len())] as char;
-            name.push(c);
-        }
-        let len = g.gen_range(1, 50);
-        let mut value = Vec::with_capacity(len);
-        while value.len() < len {
-            let token_len = g.gen_range(1, 50);
-            let mut token = String::with_capacity(token_len);
-            while token.len() < token_len {
-                let valid_in_value = "0123456789-abcdefghijklmnopqrstuvwxyz:/.?~!@&%";
-                let c = valid_in_value.as_bytes()[g.gen_range(0, valid_in_value.len())] as char;
-                token.push(c);
-            }
-            value.push(token);
-        }
-        let ret_val = Directive {
-            name, value
-        };
-        if !ret_val.is_valid() {
-            dbg!(ret_val);
-            panic!("!ret_val.is_valid()");
-        }
-        ret_val
-    }
 }
 
 impl Display for Directive {

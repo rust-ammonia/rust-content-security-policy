@@ -1,6 +1,6 @@
 [package]
 name = "content-security-policy"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Michael Howell <michael@notriddle.com>"]
 description = "Will parse and validate Content-Security-Policy level 3"
 keywords = ["http", "csp", "security"]
@@ -16,4 +16,4 @@ regex = "1.1"
 lazy_static = "1.2"
 bitflags = "1.0.4"
 version-sync = { version = "0.7", optional = true }
-quickcheck = { git = "https://github.com/notriddle/quickcheck", optional = true, features = ["derive"] }
+serde = { version = "1.0", features = ["derive"], optional = true }
