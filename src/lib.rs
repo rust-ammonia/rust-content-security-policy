@@ -49,7 +49,7 @@ pub mod text_util;
 pub mod sandboxing_directive;
 
 pub use url::{Origin, Url};
-#[cfg(feature = "quickcheck")] use serde::{Deserialize, Serialize};
+#[cfg(feature = "serde")] use serde::{Deserialize, Serialize};
 use std::borrow::{Borrow, Cow};
 use std::fmt::{self, Display, Formatter};
 use text_util::{
@@ -319,7 +319,7 @@ pub enum Initiator {
     None,
 }
 
-#[cfg_attr(feature = "quickcheck", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Destination {
     None,
