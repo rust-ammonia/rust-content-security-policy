@@ -44,6 +44,8 @@ use regex::Regex;
 extern crate lazy_static;
 #[macro_use]
 extern crate bitflags;
+#[cfg(feature = "serde")]
+extern crate serde;
 
 pub mod text_util;
 pub mod sandboxing_directive;
