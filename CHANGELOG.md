@@ -2,6 +2,10 @@
 
 *
 
+# 0.3.0
+
+* Add `Destination::is_script_like`
+
 # 0.2.0
 
 * Remove quickcheck (apparently, it was forcing everybody to download it, even if they didn't need it)
