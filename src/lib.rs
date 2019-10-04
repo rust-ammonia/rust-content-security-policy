@@ -78,6 +78,7 @@ fn scheme_is_httpx(scheme: &str) -> bool {
 A single parsed content security policy
 */
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Policy {
     pub directive_set: Vec<Directive>,
     pub disposition: PolicyDisposition,
@@ -142,6 +143,7 @@ impl Policy {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct CspList(pub Vec<Policy>);
 
 impl Display for CspList {
@@ -313,6 +315,7 @@ pub enum ParserMetadata {
     None,
 }
 
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Initiator {
     Prefetch,
@@ -384,30 +387,35 @@ pub enum ViolationResource {
 
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum CheckResult {
     Allowed,
     Blocked,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum Violates {
     DoesNotViolate,
     Directive(Directive),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum PolicyDisposition {
     Enforce,
     Report,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum PolicySource {
     Header,
     Meta,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Directive {
     name: String,
     value: Vec<String>,
