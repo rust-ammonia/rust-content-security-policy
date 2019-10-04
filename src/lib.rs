@@ -44,12 +44,14 @@ use regex::Regex;
 extern crate lazy_static;
 #[macro_use]
 extern crate bitflags;
+#[cfg(feature = "serde")]
+extern crate serde;
 
 pub mod text_util;
 pub mod sandboxing_directive;
 
 pub use url::{Origin, Url};
-#[cfg(feature = "quickcheck")] use serde::{Deserialize, Serialize};
+#[cfg(feature = "serde")] use serde::{Deserialize, Serialize};
 use std::borrow::{Borrow, Cow};
 use std::fmt::{self, Display, Formatter};
 use text_util::{
@@ -76,6 +78,7 @@ fn scheme_is_httpx(scheme: &str) -> bool {
 A single parsed content security policy
 */
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Policy {
     pub directive_set: Vec<Directive>,
     pub disposition: PolicyDisposition,
@@ -140,6 +143,7 @@ impl Policy {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct CspList(pub Vec<Policy>);
 
 impl Display for CspList {
@@ -311,6 +315,7 @@ pub enum ParserMetadata {
     None,
 }
 
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Initiator {
     Prefetch,
@@ -319,7 +324,7 @@ pub enum Initiator {
     None,
 }
 
-#[cfg_attr(feature = "quickcheck", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Destination {
     None,
@@ -341,6 +346,16 @@ pub enum Destination {
     Video,
     Worker,
     Xslt,
+}
+
+impl Destination {
+    pub fn is_script_like(self) -> bool {
+        use Destination::*;
+        match self {
+            AudioWorklet | PaintWorklet | Script | ServiceWorker | SharedWorker | Worker | Xslt => true,
+            _ => false
+        }
+    }
 }
 
 /**
@@ -372,30 +387,35 @@ pub enum ViolationResource {
 
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum CheckResult {
     Allowed,
     Blocked,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum Violates {
     DoesNotViolate,
     Directive(Directive),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum PolicyDisposition {
     Enforce,
     Report,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum PolicySource {
     Header,
     Meta,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Directive {
     name: String,
     value: Vec<String>,
@@ -925,11 +945,7 @@ fn script_directives_postrequest_check(request: &Request, response: &Response, d
 }
 
 fn request_is_script_like(request: &Request) -> bool {
-    use Destination::*;
-    match request.destination {
-        AudioWorklet | PaintWorklet | Script | ServiceWorker | SharedWorker | Worker | Xslt => true,
-        _ => false
-    }
+    request.destination.is_script_like()
 }
 
 fn should_fetch_directive_execute(effective_directive_name: &str, directive_name: &str, policy: &Policy) -> bool {
