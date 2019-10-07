@@ -1,4 +1,4 @@
-﻿/*!
+/*!
 Parse and validate Web [Content-Security-Policy level 3](https://www.w3.org/TR/CSP/)
 
 # Example
@@ -75,7 +75,9 @@ fn scheme_is_httpx(scheme: &str) -> bool {
 }
 
 /**
-A single parsed content security policy
+A single parsed content security policy.
+
+https://www.w3.org/TR/CSP/#content-security-policy-object
 */
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
@@ -103,6 +105,7 @@ impl Policy {
             self.directive_set.iter().map(|d| d.name.clone()).collect::<HashSet<_>>().len() == self.directive_set.len() &&
             !self.directive_set.is_empty()
     }
+    /// https://www.w3.org/TR/CSP/#parse-serialized-policy
     pub fn parse(serialized: &str, source: PolicySource, disposition: PolicyDisposition) -> Policy {
         let mut policy = Policy {
             directive_set: Vec::new(),
@@ -130,6 +133,7 @@ impl Policy {
     pub fn contains_a_directive_whose_name_is(&self, directive_name: &str) -> bool {
         self.directive_set.iter().any(|d| d.name == directive_name)
     }
+    /// https://www.w3.org/TR/CSP/#does-request-violate-policy
     pub fn does_request_violate_policy(&self, request: &Request) -> Violates {
         let mut violates = Violates::DoesNotViolate;
         for directive in &self.directive_set {
@@ -144,6 +148,7 @@ impl Policy {
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+/// https://www.w3.org/TR/CSP/#csp-list
 pub struct CspList(pub Vec<Policy>);
 
 impl Display for CspList {
@@ -162,9 +167,11 @@ impl CspList {
     pub fn is_valid(&self) -> bool {
         self.0.iter().all(Policy::is_valid)
     }
+    /// https://www.w3.org/TR/CSP/#contains-a-header-delivered-content-security-policy
     pub fn contains_a_header_delivered_content_security_policy(&self) -> bool {
         self.0.iter().any(|policy| policy.source == PolicySource::Header)
     }
+    /// https://www.w3.org/TR/CSP/#parse-serialized-policy-list
     pub fn parse(list: &str, source: PolicySource, disposition: PolicyDisposition) -> CspList {
         let mut policies = Vec::new();
         for token in split_commas(list) {
@@ -182,6 +189,8 @@ impl CspList {
     }
     /**
     Given a request, this algorithm reports violations based on client’s "report only" policies.
+
+    https://www.w3.org/TR/CSP/#report-for-request
     */
     pub fn report_violations_for_request(&self, request: &Request)
         -> Vec<Violation> {
@@ -199,6 +208,8 @@ impl CspList {
     /**
     Given a request, this algorithm returns Blocked or Allowed and reports violations based on
     request’s client’s Content Security Policy.
+
+    https://www.w3.org/TR/CSP/#should-block-request
     */
     pub fn should_request_be_blocked(&self, request: &Request) -> (CheckResult, Vec<Violation>) {
         let mut result = CheckResult::Allowed;
@@ -217,6 +228,8 @@ impl CspList {
     /**
     Given a response and a request, this algorithm returns Blocked or Allowed, and reports
     violations based on request’s client’s Content Security Policy.
+
+    https://www.w3.org/TR/CSP/#should-block-response
     */
     pub fn should_response_to_request_be_blocked(&self, request: &Request, response: &Response)
         -> (CheckResult, Vec<Violation>) {
@@ -250,6 +263,7 @@ impl CspList {
         }
         (result, violations)
     }
+    /// https://www.w3.org/TR/CSP/#should-block-inline
     pub fn should_elements_inline_type_behavior_be_blocked(&self, element: &Element, type_: InlineCheckType, source: &str) -> (CheckResult, Vec<Violation>) {
         use CheckResult::*;
         let mut result = Allowed;
@@ -284,6 +298,11 @@ pub struct Element<'a> {
     pub nonce: Option<Cow<'a, str>>,
 }
 
+/**
+The valid values for type are "script", "script attribute", "style", and "style attribute".
+
+https://www.w3.org/TR/CSP/#should-block-inline
+*/
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InlineCheckType {
     Script,
@@ -295,6 +314,8 @@ pub enum InlineCheckType {
 
 /**
 request to be validated
+
+https://fetch.spec.whatwg.org/#concept-request
 */
 #[derive(Clone, Debug)]
 pub struct Request {
@@ -349,6 +370,7 @@ pub enum Destination {
 }
 
 impl Destination {
+    /// https://fetch.spec.whatwg.org/#request-destination-script-like
     pub fn is_script_like(self) -> bool {
         use Destination::*;
         match self {
@@ -360,6 +382,8 @@ impl Destination {
 
 /**
 response to be validated
+
+https://fetch.spec.whatwg.org/#concept-response
 */
 #[derive(Clone, Debug)]
 pub struct Response {
@@ -370,6 +394,8 @@ pub struct Response {
 
 /**
 violation information
+
+https://www.w3.org/TR/CSP/#violation
 */
 #[derive(Clone, Debug)]
 pub struct Violation {
@@ -377,6 +403,11 @@ pub struct Violation {
     pub directive: Directive,
 }
 
+/**
+violation information
+
+https://www.w3.org/TR/CSP/#violation
+*/
 #[derive(Clone, Debug)]
 pub enum ViolationResource {
     Url(Url),
@@ -385,7 +416,10 @@ pub enum ViolationResource {
     },
 }
 
-
+/**
+Many algorithms are allowed to return either "Allowed" or "Blocked".
+The spec describes these as strings.
+*/
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum CheckResult {
@@ -393,6 +427,9 @@ pub enum CheckResult {
     Blocked,
 }
 
+/**
+https://www.w3.org/TR/CSP/#does-request-violate-policy
+*/
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum Violates {
@@ -400,6 +437,7 @@ pub enum Violates {
     Directive(Directive),
 }
 
+/// https://www.w3.org/TR/CSP/#policy-disposition
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum PolicyDisposition {
@@ -407,6 +445,7 @@ pub enum PolicyDisposition {
     Report,
 }
 
+/// https://www.w3.org/TR/CSP/#policy-source
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum PolicySource {
@@ -414,6 +453,7 @@ pub enum PolicySource {
     Meta,
 }
 
+/// https://www.w3.org/TR/CSP/#directives
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Directive {
@@ -434,10 +474,12 @@ impl Display for Directive {
 }
 
 impl Directive {
+    /// https://www.w3.org/TR/CSP/#serialized-directive
     pub fn is_valid(&self) -> bool {
         DIRECTIVE_NAME_GRAMMAR.is_match(&self.name) &&
             self.value.iter().all(|t| DIRECTIVE_VALUE_TOKEN_GRAMMAR.is_match(&t[..]))
     }
+    /// https://www.w3.org/TR/CSP/#directive-pre-request-check
     pub fn pre_request_check(&self, request: &Request, policy: &Policy) -> CheckResult {
         use CheckResult::*;
         match &self.name[..] {
@@ -597,6 +639,7 @@ impl Directive {
             _ => Allowed,
         }
     }
+    /// https://www.w3.org/TR/CSP/#directive-post-request-check
     pub fn post_request_check(&self, request: &Request, response: &Response, policy: &Policy) -> CheckResult {
         use CheckResult::*;
         match &self.name[..] {
@@ -764,6 +807,7 @@ impl Directive {
             _ => Allowed,
         }
     }
+    /// https://www.w3.org/TR/CSP/#directive-response-check
     pub fn response_check(&self, request: &Request, _response: &Response, policy: &Policy) -> CheckResult {
         use CheckResult::*;
         use Destination::*;
@@ -788,6 +832,7 @@ impl Directive {
             _ => Allowed,
         }
     }
+    /// https://www.w3.org/TR/CSP/#directive-inline-check
     pub fn inline_check(&self, element: &Element, type_: InlineCheckType, policy: &Policy, source: &str) -> CheckResult {
         use CheckResult::*;
         match &self.name[..] {
@@ -872,6 +917,7 @@ impl Directive {
     }
 }
 
+/// https://www.w3.org/TR/CSP/#effective-directive-for-inline-check
 fn get_the_effective_directive_for_inline_checks(type_: InlineCheckType) -> &'static str {
     use InlineCheckType::*;
     match type_ {
@@ -882,6 +928,7 @@ fn get_the_effective_directive_for_inline_checks(type_: InlineCheckType) -> &'st
     }
 }
 
+/// https://www.w3.org/TR/CSP/#script-pre-request
 fn script_directives_prerequest_check(request: &Request, directive: &Directive) -> CheckResult {
     use CheckResult::*;
     if request_is_script_like(request) {
@@ -927,6 +974,7 @@ fn script_directives_prerequest_check(request: &Request, directive: &Directive) 
     Allowed
 }
 
+/// https://www.w3.org/TR/CSP/#script-post-request
 fn script_directives_postrequest_check(request: &Request, response: &Response, directive: &Directive) -> CheckResult {
     use CheckResult::*;
     if request_is_script_like(request) {
@@ -944,10 +992,12 @@ fn script_directives_postrequest_check(request: &Request, response: &Response, d
     Allowed
 }
 
+/// https://fetch.spec.whatwg.org/#request-destination-script-like
 fn request_is_script_like(request: &Request) -> bool {
     request.destination.is_script_like()
 }
 
+/// https://www.w3.org/TR/CSP/#should-directive-execute
 fn should_fetch_directive_execute(effective_directive_name: &str, directive_name: &str, policy: &Policy) -> bool {
     let directive_fallback_list = get_fetch_directive_fallback_list(effective_directive_name);
     for fallback_directive in directive_fallback_list {
@@ -961,6 +1011,7 @@ fn should_fetch_directive_execute(effective_directive_name: &str, directive_name
     false
 }
 
+/// https://www.w3.org/TR/CSP/#directive-fallback-list
 fn get_fetch_directive_fallback_list(directive_name: &str) -> &'static [&'static str] {
     match directive_name {
         "script-src-elem" => &["script-src-elem", "script-src", "default-src"],
@@ -980,6 +1031,7 @@ fn get_fetch_directive_fallback_list(directive_name: &str) -> &'static [&'static
     }
 }
 
+/// https://www.w3.org/TR/CSP/#effective-directive-for-a-request
 fn get_the_effective_directive_for_request(request: &Request) -> &'static str {
     use Initiator::*;
     use Destination::*;
@@ -1003,6 +1055,7 @@ fn get_the_effective_directive_for_request(request: &Request) -> &'static str {
     }
 }
 
+/// https://www.w3.org/TR/CSP/#match-element-to-source-list
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MatchResult {
     Matches,
@@ -1010,26 +1063,34 @@ pub enum MatchResult {
 }
 
 lazy_static!{
+    /// https://www.w3.org/TR/CSP/#grammardef-directive-name
     static ref DIRECTIVE_NAME_GRAMMAR: Regex =
         Regex::new(r#"^[0-9a-z\-]+$"#).unwrap();
+    /// https://www.w3.org/TR/CSP/#grammardef-directive-value
     static ref DIRECTIVE_VALUE_TOKEN_GRAMMAR: Regex =
         Regex::new(r#"^[\u{21}-\u{2B}\u{2D}-\u{3A}\u{3C}-\u{7E}]+$"#).unwrap();
+    /// https://www.w3.org/TR/CSP/#grammardef-nonce-source
     static ref NONCE_SOURCE_GRAMMAR: Regex =
         Regex::new(r#"^'nonce-(?P<n>[a-zA-Z0-9\+/\-_]+=*)'$"#).unwrap();
     static ref NONE_SOURCE_GRAMMAR: Regex =
         Regex::new(r#"^'none'$"#).unwrap();
+    /// https://www.w3.org/TR/CSP/#grammardef-scheme-source
     static ref SCHEME_SOURCE_GRAMMAR: Regex =
         Regex::new(r#"^(?P<scheme>[a-zA-Z][a-zA-Z0-9\+\-\.]*):$"#).unwrap();
+    /// https://www.w3.org/TR/CSP/#grammardef-host-source
     static ref HOST_SOURCE_GRAMMAR: Regex =
         Regex::new(r#"^((?P<scheme>[a-zA-Z][a-zA-Z0-9\+\-\.]*)://)?(?P<host>\*|(\*\.)?[a-zA-Z0-9\-]+(\.[a-zA-Z0-9\-]+)*)(?P<port>:(\*|[0-9]+))?(?P<path>/([:@%!\$&'\(\)\*\+,;=0-9a-zA-Z\-\._~]+)?(/[:@%!\$&'\(\)\*\+,;=0-9a-zA-Z\-\._~]*)*)?$"#).unwrap();
+    /// https://www.w3.org/TR/CSP/#grammardef-hash-source
     static ref HASH_SOURCE_GRAMMAR: Regex =
         Regex::new(r#"^'(?P<algorithm>sha256|sha384|sha512)-(?P<value>[a-zA-Z0-9\+/\-_]+=*)'$"#).unwrap();
 }
 
+/// https://www.w3.org/TR/CSP/#framework-directive-source-list
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct SourceList<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>>(I);
 
 impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> SourceList<'a, U, I> {
+    /// https://www.w3.org/TR/CSP/#match-nonce-to-source-list
     fn does_nonce_match_source_list(&self, nonce: &str) -> MatchResult {
         if nonce.is_empty() { return DoesNotMatch };
         for expression in self.0.clone().into_iter() {
@@ -1043,6 +1104,7 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
         }
         DoesNotMatch
     }
+    /// https://www.w3.org/TR/CSP/#match-request-to-source-list
     fn does_request_match_source_list(&self, request: &Request) -> MatchResult {
         self.does_url_match_source_list_in_origin_with_redirect_count(
             &request.url,
@@ -1050,6 +1112,7 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
             request.redirect_count,
         )
     }
+    /// https://www.w3.org/TR/CSP/#match-url-to-source-list
     fn does_url_match_source_list_in_origin_with_redirect_count(
         &self,
         url: &Url,
@@ -1070,6 +1133,7 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
         }
         DoesNotMatch
     }
+    /// https://www.w3.org/TR/CSP/#match-element-to-source-list
     fn does_element_match_source_list_for_type_and_source(
         &self,
         element: &Element,
@@ -1114,6 +1178,7 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
         }
         DoesNotMatch
     }
+    /// https://www.w3.org/TR/CSP/#allow-all-inline
     fn does_a_source_list_allow_all_inline_behavior_for_type(&self, type_: InlineCheckType) -> AllowResult {
         use InlineCheckType::*;
         let mut allow_all_inline = false;
@@ -1134,6 +1199,7 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
             AllowResult::DoesNotAllow
         }
     }
+    /// https://www.w3.org/TR/CSP/#match-response-to-source-list
     fn does_response_to_request_match_source_list(
         &self,
         request: &Request,
@@ -1146,12 +1212,14 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
     }
 }
 
+/// https://www.w3.org/TR/CSP/#allow-all-inline
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AllowResult {
     Allows,
     DoesNotAllow,
 }
 
+/// https://www.w3.org/TR/CSP/#match-url-to-source-expression
 fn does_url_match_expression_in_origin_with_redirect_count(
     url: &Url,
     expression: &str,
@@ -1234,6 +1302,7 @@ fn does_url_match_expression_in_origin_with_redirect_count(
     DoesNotMatch
 }
 
+/// https://www.w3.org/TR/CSP/#match-hosts
 fn host_part_match(a: &str, b: &str) -> MatchResult {
     debug_assert!(!a.is_empty());
     if a.is_empty() {
@@ -1272,6 +1341,7 @@ fn host_part_match(a: &str, b: &str) -> MatchResult {
     Matches
 }
 
+/// https://www.w3.org/TR/CSP/#match-ports
 fn port_part_match(port_a: &str, port_b: &str, scheme_b: &str) -> MatchResult {
     if port_a.is_empty() {
         if port_b == default_port_str(scheme_b) {
@@ -1296,6 +1366,7 @@ fn port_part_match(port_a: &str, port_b: &str, scheme_b: &str) -> MatchResult {
     DoesNotMatch
 }
 
+/// https://www.w3.org/TR/CSP/#match-paths
 fn path_part_match(path_a: &str, path_b: &str) -> MatchResult {
     if path_a.is_empty() {
         return Matches;
@@ -1367,6 +1438,7 @@ fn origin_scheme_part_match(a: &Origin, b: &str) -> MatchResult {
     }
 }
 
+/// https://www.w3.org/TR/CSP/#match-schemes
 fn scheme_part_match(a: &str, b: &str) -> MatchResult {
     let a = a.to_ascii_lowercase();
     let b = b.to_ascii_lowercase();
@@ -1401,12 +1473,15 @@ impl HashAlgorithm {
     }
 }
 
+/// https://www.w3.org/TR/SRI/#integrity-metadata
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HashFunction {
     algorithm: HashAlgorithm,
     value: String,
+    // The spec defines a third member, options, but defines no values.
 }
 
+/// https://www.w3.org/TR/SRI/#parse-metadata
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SubresourceIntegrityMetadata {
     NoMetadata,
@@ -1414,10 +1489,13 @@ pub enum SubresourceIntegrityMetadata {
 }
 
 lazy_static!{
+    /// https://www.w3.org/TR/SRI/#the-integrity-attribute
+    /// This corresponds to the "hash-expression" grammar.
     static ref SUBRESOURCE_METADATA_GRAMMAR: Regex =
         Regex::new(r#"(?P<algorithm>sha256|sha384|sha512)-(?P<value>[a-zA-Z0-9\+/\-_]+=*)"#).unwrap();
 }
 
+/// https://www.w3.org/TR/SRI/#parse-metadata
 pub fn parse_subresource_integrity_metadata(string: &str) -> SubresourceIntegrityMetadata {
     let mut result = Vec::new();
     let mut empty = true;
