@@ -19,7 +19,7 @@ pub(crate) struct SplitAsciiWhitespace<'a>(&'a str);
 impl<'a> Iterator for SplitAsciiWhitespace<'a> {
     type Item = &'a str;
     fn next(&mut self) -> Option<Self::Item> {
-        self.0 = self.0.trim_left_matches(is_char_ascii_whitespace);
+        self.0 = self.0.trim_start_matches(is_char_ascii_whitespace);
         let mut s = self.0.splitn(2, is_char_ascii_whitespace);
         let next = s.next().unwrap_or("");
         self.0 = s.next().unwrap_or("");

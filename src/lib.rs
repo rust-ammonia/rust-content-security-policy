@@ -1468,8 +1468,14 @@ impl HashAlgorithm {
             _ => None,
         }
     }
-    pub fn apply(self, _value: &str) -> String {
-        unimplemented!();
+    pub fn apply(self, value: &str) -> String {
+        let algorithm = match self {
+            HashAlgorithm::Sha256 => &ring::digest::SHA256,
+            HashAlgorithm::Sha384 => &ring::digest::SHA384,
+            HashAlgorithm::Sha512 => &ring::digest::SHA512,
+        };
+        let digest = ring::digest::digest(algorithm, value.as_bytes());
+        base64::encode(digest.as_ref())
     }
 }
 
