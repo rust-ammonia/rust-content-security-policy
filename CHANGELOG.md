@@ -2,6 +2,11 @@
 
 *
 
+# 0.4.0
+
+* Implement hashing functions
+* Minimum supported Rust version: 1.39.0
+
 # 0.3.0
 
 * Add `Destination::is_script_like`
