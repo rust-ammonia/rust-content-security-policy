@@ -46,12 +46,14 @@ extern crate lazy_static;
 extern crate bitflags;
 #[cfg(feature = "serde")]
 extern crate serde;
+extern crate sha2;
 
 pub mod text_util;
 pub mod sandboxing_directive;
 
 pub use url::{Origin, Url};
 #[cfg(feature = "serde")] use serde::{Deserialize, Serialize};
+use sha2::Digest;
 use std::borrow::{Borrow, Cow};
 use std::fmt::{self, Display, Formatter};
 use text_util::{
@@ -1469,13 +1471,12 @@ impl HashAlgorithm {
         }
     }
     pub fn apply(self, value: &str) -> String {
-        let algorithm = match self {
-            HashAlgorithm::Sha256 => &ring::digest::SHA256,
-            HashAlgorithm::Sha384 => &ring::digest::SHA384,
-            HashAlgorithm::Sha512 => &ring::digest::SHA512,
-        };
-        let digest = ring::digest::digest(algorithm, value.as_bytes());
-        base64::encode(digest.as_ref())
+        let bytes = value.as_bytes();
+        match self {
+            HashAlgorithm::Sha256 => base64::encode(sha2::Sha256::digest(bytes)),
+            HashAlgorithm::Sha384 => base64::encode(sha2::Sha384::digest(bytes)),
+            HashAlgorithm::Sha512 => base64::encode(sha2::Sha512::digest(bytes)),
+        }
     }
 }
 
