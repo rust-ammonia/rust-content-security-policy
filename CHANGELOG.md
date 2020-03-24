@@ -1,6 +1,8 @@
 # Unreleased
 
-*
+# 0.4.1
+
+* Use the `sha2` crate for hashing (more portable)
 
 # 0.4.0
 
