@@ -1268,7 +1268,8 @@ fn does_url_match_expression_in_origin_with_redirect_count(
             // It should not be possible to match HOST_SOURCE_GRAMMAR without having a host part
             return DoesNotMatch;
         }
-        let port_part = captures.name("port").map(|port| port.as_str()).unwrap_or("");
+        // Skip the first byte of the port capture to avoid the `:`.
+        let port_part = captures.name("port").map(|port| &port.as_str()[1..]).unwrap_or("");
         let url_port = url_port(url);
         if port_part_match(port_part, &url_port[..], url.scheme()) != Matches {
             return DoesNotMatch;

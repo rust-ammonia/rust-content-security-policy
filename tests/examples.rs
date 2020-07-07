@@ -25,6 +25,12 @@ macro_rules! test_should_request_be_blocked {
 
 // all tests should have a name starting with pre_request_
 test_should_request_be_blocked!{
+    (   name: pre_request_wild_connect_port_allow,
+        url: "https://www.notriddle.com:443/meta",
+        origin: "https://example.com",
+        policy: "connect-src https://*.notriddle.com:443",
+        dest: None,
+        result: Allowed),
     (   name: pre_request_wild_script_allow,
         url: "https://www.notriddle.com/script.js",
         origin: "https://www.notriddle.com",
