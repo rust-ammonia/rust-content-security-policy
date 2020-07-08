@@ -8,6 +8,12 @@ license = "MIT / Apache-2.0"
 readme = "README.md"
 documentation = "https://docs.rs/content-security-policy/"
 repository = "https://github.com/notriddle/rust-content-security-policy"
+exclude = [
+  "Cargo.nix",
+  "default.nix",
+  "nix/",
+  "shell.nix"
+]
 
 [dependencies]
 url = "2"
