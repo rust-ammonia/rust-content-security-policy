@@ -1,5 +1,9 @@
 # Unreleased
 
+# 0.4.2
+
+* Fix a bug in port parsing
+
 # 0.4.1
 
 * Use the `sha2` crate for hashing (more portable)
