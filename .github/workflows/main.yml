@@ -16,7 +16,7 @@ jobs:
       matrix:
         rust: ["1.50.0", "stable", "beta"]
         os: [ubuntu-latest]
-        cargo_params: ["", "--features=serde"]
+        cargo_params: ["--features=version-sync", "--features=serde"]
     steps:
       - uses: actions/checkout@master
       - name: Set toolchain
