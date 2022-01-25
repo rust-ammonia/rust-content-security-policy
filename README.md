@@ -1,7 +1,7 @@
 # Parse and validate Web [Content-Security-Policy level 3](https://www.w3.org/TR/CSP/)
 
 [![Crates.IO](https://img.shields.io/crates/v/content-security-policy.svg)](https://crates.rs/crates/content-security-policy)
-![Requires rustc 1.39.0](https://img.shields.io/badge/rustc-1.39.0+-green.svg)
+![Requires rustc 1.50.0](https://img.shields.io/badge/rustc-1.50.0+-green.svg)
 
 This function parses a CSP string into a data structure, and provides a bunch of functions you can call on it (basically all of the "hooks" defined in the CSP standard). It directly uses the `url` crate, but it's intentionally agnostic to your HTML parser and your networking stack, so there are a few things it doesn't do:
 
@@ -15,7 +15,7 @@ To use `content-security-policy`, add it to your project's `Cargo.toml` file:
 
 ```toml
 [dependencies]
-content-security-policy = "0.4.2"
+content-security-policy = "0.5.0"
 ```
 
 # Example

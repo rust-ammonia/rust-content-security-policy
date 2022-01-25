@@ -38,17 +38,8 @@ fn main() {
 
 pub extern crate url;
 pub extern crate percent_encoding;
-extern crate regex;
-use regex::Regex;
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate bitflags;
-#[cfg(feature = "serde")]
-extern crate serde;
-extern crate sha2;
 
-pub mod text_util;
+pub(crate) mod text_util;
 pub mod sandboxing_directive;
 
 pub use url::{Origin, Url};
@@ -67,6 +58,8 @@ use sandboxing_directive::{SandboxingFlagSet, parse_a_sandboxing_directive};
 use MatchResult::Matches;
 use MatchResult::DoesNotMatch;
 use std::collections::HashSet;
+use regex::Regex;
+use once_cell::sync::Lazy;
 
 fn scheme_is_network(scheme: &str) -> bool {
     scheme == "ftp" || scheme_is_httpx(scheme)
@@ -1064,28 +1057,26 @@ pub enum MatchResult {
     DoesNotMatch,
 }
 
-lazy_static!{
-    /// https://www.w3.org/TR/CSP/#grammardef-directive-name
-    static ref DIRECTIVE_NAME_GRAMMAR: Regex =
-        Regex::new(r#"^[0-9a-z\-]+$"#).unwrap();
-    /// https://www.w3.org/TR/CSP/#grammardef-directive-value
-    static ref DIRECTIVE_VALUE_TOKEN_GRAMMAR: Regex =
-        Regex::new(r#"^[\u{21}-\u{2B}\u{2D}-\u{3A}\u{3C}-\u{7E}]+$"#).unwrap();
-    /// https://www.w3.org/TR/CSP/#grammardef-nonce-source
-    static ref NONCE_SOURCE_GRAMMAR: Regex =
-        Regex::new(r#"^'nonce-(?P<n>[a-zA-Z0-9\+/\-_]+=*)'$"#).unwrap();
-    static ref NONE_SOURCE_GRAMMAR: Regex =
-        Regex::new(r#"^'none'$"#).unwrap();
-    /// https://www.w3.org/TR/CSP/#grammardef-scheme-source
-    static ref SCHEME_SOURCE_GRAMMAR: Regex =
-        Regex::new(r#"^(?P<scheme>[a-zA-Z][a-zA-Z0-9\+\-\.]*):$"#).unwrap();
-    /// https://www.w3.org/TR/CSP/#grammardef-host-source
-    static ref HOST_SOURCE_GRAMMAR: Regex =
-        Regex::new(r#"^((?P<scheme>[a-zA-Z][a-zA-Z0-9\+\-\.]*)://)?(?P<host>\*|(\*\.)?[a-zA-Z0-9\-]+(\.[a-zA-Z0-9\-]+)*)(?P<port>:(\*|[0-9]+))?(?P<path>/([:@%!\$&'\(\)\*\+,;=0-9a-zA-Z\-\._~]+)?(/[:@%!\$&'\(\)\*\+,;=0-9a-zA-Z\-\._~]*)*)?$"#).unwrap();
-    /// https://www.w3.org/TR/CSP/#grammardef-hash-source
-    static ref HASH_SOURCE_GRAMMAR: Regex =
-        Regex::new(r#"^'(?P<algorithm>sha256|sha384|sha512)-(?P<value>[a-zA-Z0-9\+/\-_]+=*)'$"#).unwrap();
-}
+/// https://www.w3.org/TR/CSP/#grammardef-directive-name
+static DIRECTIVE_NAME_GRAMMAR: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"^[0-9a-z\-]+$"#).unwrap());
+/// https://www.w3.org/TR/CSP/#grammardef-directive-value
+static DIRECTIVE_VALUE_TOKEN_GRAMMAR: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"^[\u{21}-\u{2B}\u{2D}-\u{3A}\u{3C}-\u{7E}]+$"#).unwrap());
+/// https://www.w3.org/TR/CSP/#grammardef-nonce-source
+static NONCE_SOURCE_GRAMMAR: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"^'nonce-(?P<n>[a-zA-Z0-9\+/\-_]+=*)'$"#).unwrap());
+static NONE_SOURCE_GRAMMAR: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"^'none'$"#).unwrap());
+/// https://www.w3.org/TR/CSP/#grammardef-scheme-source
+static SCHEME_SOURCE_GRAMMAR: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"^(?P<scheme>[a-zA-Z][a-zA-Z0-9\+\-\.]*):$"#).unwrap());
+/// https://www.w3.org/TR/CSP/#grammardef-host-source
+static HOST_SOURCE_GRAMMAR: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"^((?P<scheme>[a-zA-Z][a-zA-Z0-9\+\-\.]*)://)?(?P<host>\*|(\*\.)?[a-zA-Z0-9\-]+(\.[a-zA-Z0-9\-]+)*)(?P<port>:(\*|[0-9]+))?(?P<path>/([:@%!\$&'\(\)\*\+,;=0-9a-zA-Z\-\._~]+)?(/[:@%!\$&'\(\)\*\+,;=0-9a-zA-Z\-\._~]*)*)?$"#).unwrap());
+/// https://www.w3.org/TR/CSP/#grammardef-hash-source
+static HASH_SOURCE_GRAMMAR: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"^'(?P<algorithm>sha256|sha384|sha512)-(?P<value>[a-zA-Z0-9\+/\-_]+=*)'$"#).unwrap());
 
 /// https://www.w3.org/TR/CSP/#framework-directive-source-list
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1328,10 +1319,8 @@ fn host_part_match(a: &str, b: &str) -> MatchResult {
     if !ascii_case_insensitive_match(a, b) {
         return DoesNotMatch;
     }
-    lazy_static!{
-        static ref IPV4_ADDRESS_RULE: Regex =
-            Regex::new(r#"([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])"#).unwrap();
-    }
+    static IPV4_ADDRESS_RULE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r#"([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])"#).unwrap());
     if IPV4_ADDRESS_RULE.is_match(a) && a != "127.0.0.1" {
         return DoesNotMatch;
     }
@@ -1496,12 +1485,10 @@ pub enum SubresourceIntegrityMetadata {
     IntegritySources(Vec<HashFunction>)
 }
 
-lazy_static!{
-    /// https://www.w3.org/TR/SRI/#the-integrity-attribute
-    /// This corresponds to the "hash-expression" grammar.
-    static ref SUBRESOURCE_METADATA_GRAMMAR: Regex =
-        Regex::new(r#"(?P<algorithm>sha256|sha384|sha512)-(?P<value>[a-zA-Z0-9\+/\-_]+=*)"#).unwrap();
-}
+/// https://www.w3.org/TR/SRI/#the-integrity-attribute
+/// This corresponds to the "hash-expression" grammar.
+static SUBRESOURCE_METADATA_GRAMMAR: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"(?P<algorithm>sha256|sha384|sha512)-(?P<value>[a-zA-Z0-9\+/\-_]+=*)"#).unwrap());
 
 /// https://www.w3.org/TR/SRI/#parse-metadata
 pub fn parse_subresource_integrity_metadata(string: &str) -> SubresourceIntegrityMetadata {

@@ -1,5 +1,9 @@
 # Unreleased
 
+* Minimum supported Rust version: 1.50.0
+* chore: switch to edition 2018
+* chore: bump dependencies
+
 # 0.4.2
 
 * Fix a bug in port parsing
