@@ -268,7 +268,7 @@ impl CspList {
                 if directive.inline_check(element, type_, policy, source) == Allowed {
                     continue;
                 }
-                let report_sample = directive.value.iter().filter(|t| &t[..] == "'report-sample'").next().is_some();
+                let report_sample = directive.value.iter().any(|t| &t[..] == "'report-sample'");
                 let violation = Violation {
                     resource: ViolationResource::Inline{ report_sample },
                     directive: directive.clone(),
@@ -368,10 +368,7 @@ impl Destination {
     /// https://fetch.spec.whatwg.org/#request-destination-script-like
     pub fn is_script_like(self) -> bool {
         use Destination::*;
-        match self {
-            AudioWorklet | PaintWorklet | Script | ServiceWorker | SharedWorker | Worker | Xslt => true,
-            _ => false
-        }
+        matches!(self, AudioWorklet | PaintWorklet | Script | ServiceWorker | SharedWorker | Worker | Xslt)
     }
 }
 
@@ -946,7 +943,7 @@ fn script_directives_prerequest_check(request: &Request, directive: &Directive) 
             if let SubresourceIntegrityMetadata::IntegritySources(integrity_sources) = integrity_sources {
                 let mut bypass_due_to_integrity_match = true;
                 for source in &integrity_sources {
-                    if integrity_expressions.iter().filter(|&ex| ex == source).next().is_none() {
+                    if integrity_expressions.iter().any(|ex| ex == source) {
                         bypass_due_to_integrity_match = false;
                     }
                 }
@@ -954,7 +951,7 @@ fn script_directives_prerequest_check(request: &Request, directive: &Directive) 
                     return Allowed;
                 }
             }
-            if directive.value.iter().filter(|ex| ascii_case_insensitive_match(ex, "'strict-dynamic'")).next().is_some() {
+            if directive.value.iter().any(|ex| ascii_case_insensitive_match(ex, "'strict-dynamic'")) {
                 if request.parser_metadata == ParserMetadata::ParserInserted {
                     return Blocked;
                 } else {
@@ -977,7 +974,7 @@ fn script_directives_postrequest_check(request: &Request, response: &Response, d
         if source_list.does_nonce_match_source_list(&request.nonce) == Matches {
             return Allowed;
         }
-        if directive.value.iter().filter(|ex| ascii_case_insensitive_match(ex, "'strict-dynamic'")).next().is_some() && request.parser_metadata != ParserMetadata::ParserInserted {
+        if directive.value.iter().any(|ex| ascii_case_insensitive_match(ex, "'strict-dynamic'")) && request.parser_metadata != ParserMetadata::ParserInserted {
             return Allowed;
         }
         if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
@@ -1278,10 +1275,10 @@ fn does_url_match_expression_in_origin_with_redirect_count(
         if *origin == url.origin() {
             return Matches;
         }
-        if let &Origin::Tuple(ref scheme, ref host, port) = origin {
+        if let Origin::Tuple(scheme, host, port) = origin {
             let hosts_are_the_same = Some(host) == url.host().map(|p| p.to_owned()).as_ref();
-            let ports_are_the_same = Some(port) == url.port();
-            let origins_port_is_default_for_scheme = Some(port) == default_port(scheme);
+            let ports_are_the_same = Some(*port) == url.port();
+            let origins_port_is_default_for_scheme = Some(*port) == default_port(scheme);
             let url_port_is_default_port_for_scheme = url.port() == default_port(scheme)
                 && default_port(scheme).is_some();
             let ports_are_default = url_port_is_default_port_for_scheme && origins_port_is_default_for_scheme;
@@ -1348,7 +1345,7 @@ fn port_part_match(port_a: &str, port_b: &str, scheme_b: &str) -> MatchResult {
     if port_a == port_b {
         return Matches;
     }
-    if port_b == "" {
+    if port_b.is_empty() {
         if port_a == default_port_str(scheme_b) {
             return Matches;
         } else {
@@ -1376,7 +1373,7 @@ fn path_part_match(path_a: &str, path_b: &str) -> MatchResult {
         return DoesNotMatch;
     }
     if !exact_match {
-        debug_assert_eq!(&path_list_a[path_list_a.len()-1][..], "");
+        debug_assert_eq!(path_list_a[path_list_a.len()-1], "");
         path_list_a.pop();
     }
     let mut piece_b_iter = path_list_b.iter();
@@ -1423,7 +1420,7 @@ fn default_port(scheme: &str) -> Option<u16> {
 }
 
 fn origin_scheme_part_match(a: &Origin, b: &str) -> MatchResult {
-    if let &Origin::Tuple(ref scheme, ref _host, ref _port) = a {
+    if let Origin::Tuple(scheme, _host, _port) = a {
         scheme_part_match(&scheme[..], b)
     } else {
         DoesNotMatch
