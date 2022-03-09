@@ -281,6 +281,33 @@ impl CspList {
         }
         (result, violations)
     }
+    /**
+    https://www.w3.org/TR/CSP/#allow-base-for-document
+
+    Note that, while this algoritm is defined as operating on a document, the only property it
+    actually uses is the document's CSP List. So this function operates on that.
+    */
+    pub fn is_base_allowed_for_document(&self, base: &Url, self_origin: &Origin) -> (CheckResult, Vec<Violation>) {
+        use CheckResult::*;
+        let mut violations = Vec::new();
+        for policy in &self.0 {
+            let directive = policy.directive_set.iter().find(|directive| directive.name == "base-uri");
+            if let Some(directive) = directive {
+                if SourceList(&directive.value).does_url_match_source_list_in_origin_with_redirect_count(base, &self_origin, 0) == DoesNotMatch {
+                    let report_sample = directive.value.iter().any(|t| &t[..] == "'report-sample'");
+                    let violation = Violation {
+                        directive: directive.clone(),
+                        resource: ViolationResource::Inline { report_sample },
+                    };
+                    violations.push(violation);
+                    if policy.disposition == PolicyDisposition::Enforce {
+                        return (Blocked, violations);
+                    }
+                }
+            }
+        }
+        return (Allowed, violations);
+    }
 }
 
 #[derive(Clone, Debug)]
