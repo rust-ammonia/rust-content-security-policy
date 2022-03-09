@@ -7,7 +7,7 @@ keywords = ["http", "csp", "security"]
 license = "MIT / Apache-2.0"
 readme = "README.md"
 documentation = "https://docs.rs/content-security-policy/"
-repository = "https://github.com/notriddle/rust-content-security-policy"
+repository = "https://github.com/rust-ammonia/rust-content-security-policy"
 edition = "2018"
 exclude = [
   "Cargo.nix",
@@ -19,7 +19,7 @@ exclude = [
 [dependencies]
 url = "2"
 percent-encoding = "2.1"
-regex = "1.1"
+regex = { version = "1.1", default-features = false, features = ["std"] }
 bitflags = "1.3"
 version-sync = { version = "0.9", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
