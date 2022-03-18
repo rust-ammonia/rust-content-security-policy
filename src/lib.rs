@@ -308,6 +308,17 @@ impl CspList {
         }
         return (Allowed, violations);
     }
+    pub fn get_sandboxing_flag_set_for_document(&self) -> Option<SandboxingFlagSet> {
+        self.0
+            .iter()
+            .flat_map(|policy| {
+                policy.directive_set
+                    .iter()
+                    .find(|directive| directive.name == "sandbox")
+                    .and_then(|directive| directive.get_sandboxing_flag_set_for_document(policy))
+            })
+            .next()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -932,6 +943,20 @@ impl Directive {
                 Allowed
             }
             _ => Allowed
+        }
+    }
+    /// https://www.w3.org/TR/CSP/#sandbox-init
+    pub fn get_sandboxing_flag_set_for_document(&self, policy: &Policy) -> Option<SandboxingFlagSet> {
+        use PolicyDisposition::*;
+        match &self.name[..] {
+            "sandbox" => {
+                if policy.disposition != Enforce {
+                    None
+                } else {
+                    Some(parse_a_sandboxing_directive(&self.value[..]))
+                }
+            },
+            _ => None,
         }
     }
 }
