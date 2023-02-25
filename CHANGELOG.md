@@ -1,5 +1,9 @@
 # Unreleased
 
+# 0.5.0
+
+* feat: allow getting the document's sandboxing flag set
+* feat: implement base URI
 * Minimum supported Rust version: 1.50.0
 * chore: switch to edition 2018
 * chore: bump dependencies
