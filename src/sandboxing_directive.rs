@@ -1,6 +1,7 @@
 use bitflags::bitflags;
 
 bitflags!{
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub struct SandboxingFlagSet: u32 {
         const SANDBOXED_NAVIGATION_BROWSING_CONTEXT_FLAG = 0x00000001;
         const SANDBOXED_AUXILIARY_NAVIGATION_BROWSING_CONTEXT_FLAG = 0x00000002;
