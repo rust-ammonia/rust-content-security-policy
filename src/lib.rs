@@ -1510,11 +1510,13 @@ impl HashAlgorithm {
         }
     }
     pub fn apply(self, value: &str) -> String {
+        use base64::Engine as _;
         let bytes = value.as_bytes();
+        let standard = base64::engine::general_purpose::STANDARD;
         match self {
-            HashAlgorithm::Sha256 => base64::encode(sha2::Sha256::digest(bytes)),
-            HashAlgorithm::Sha384 => base64::encode(sha2::Sha384::digest(bytes)),
-            HashAlgorithm::Sha512 => base64::encode(sha2::Sha512::digest(bytes)),
+            HashAlgorithm::Sha256 => standard.encode(sha2::Sha256::digest(bytes)),
+            HashAlgorithm::Sha384 => standard.encode(sha2::Sha384::digest(bytes)),
+            HashAlgorithm::Sha512 => standard.encode(sha2::Sha512::digest(bytes)),
         }
     }
 }
