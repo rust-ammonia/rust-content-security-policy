@@ -1,5 +1,10 @@
 # Unreleased
 
+# 0.5.1
+
+* Minimum supported Rust version: 1.60.0
+* chore: bump base64 dependency
+
 # 0.5.0
 
 * feat: allow getting the document's sandboxing flag set
