@@ -130,6 +130,10 @@ impl Policy {
     }
     /// https://www.w3.org/TR/CSP/#does-request-violate-policy
     pub fn does_request_violate_policy(&self, request: &Request) -> Violates {
+        if request.initiator == Initiator::Prefetch {
+            return self.does_resource_hint_violate_policy(request);
+        }
+
         let mut violates = Violates::DoesNotViolate;
         for directive in &self.directive_set {
             let result = directive.pre_request_check(request, self);
@@ -138,6 +142,25 @@ impl Policy {
             }
         }
         violates
+    }
+
+    /// https://www.w3.org/TR/CSP/#does-resource-hint-violate-policy
+    pub fn does_resource_hint_violate_policy(&self, request: &Request) -> Violates {
+        let default_directive = &self.directive_set.iter()
+            .find(|x| x.name == "default-src");
+
+        if default_directive.is_none() {
+            return Violates::DoesNotViolate;
+        }
+
+        for directive in &self.directive_set {
+            let result = directive.pre_request_check(request, self);
+            if result == CheckResult::Allowed {
+                return Violates::DoesNotViolate;
+            }
+        }
+
+        return Violates::Directive(default_directive.unwrap().clone());
     }
 }
 
