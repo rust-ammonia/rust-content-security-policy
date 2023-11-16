@@ -1621,4 +1621,66 @@ mod test {
         };
         assert!(!p.is_valid());
     }
+
+    #[test]
+    pub fn prefetch_request_does_not_violate_policy() {
+        let request = Request {
+            url: Url::parse("https://www.notriddle.com/script.js").unwrap(),
+            origin: Origin::Tuple("https".to_string(), url::Host::Domain("notriddle.com".to_owned()), 443),
+            redirect_count: 0,
+            destination: Destination::Script,
+            initiator: Initiator::Prefetch,
+            nonce: String::new(),
+            integrity_metadata: String::new(),
+            parser_metadata: ParserMetadata::None,
+        };
+
+        let p = Policy::parse("child-src 'self'", PolicySource::Header, PolicyDisposition::Enforce);
+        
+        let violation_result = p.does_request_violate_policy(&request);
+
+        assert!(violation_result == Violates::DoesNotViolate);
+    }
+
+    #[test]
+    pub fn prefetch_request_violates_policy() {
+        let request = Request {
+            url: Url::parse("https://www.notriddle.com/script.js").unwrap(),
+            origin: Origin::Tuple("https".to_string(), url::Host::Domain("notriddle.com".to_owned()), 443),
+            redirect_count: 0,
+            destination: Destination::Script,
+            initiator: Initiator::Prefetch,
+            nonce: String::new(),
+            integrity_metadata: String::new(),
+            parser_metadata: ParserMetadata::None,
+        };
+
+        let p = Policy::parse("default-src 'none' ", PolicySource::Header, PolicyDisposition::Enforce);
+        
+        let violation_result = p.does_request_violate_policy(&request);
+
+        let expected_result = Violates::Directive(Directive { name: String::from("default-src"), value: vec![String::from("'none'")] });
+
+        assert!(violation_result == expected_result);        
+    }
+
+    #[test]
+    pub fn prefetch_request_is_allowed_by_directive() {
+        let request = Request {
+            url: Url::parse("https://www.notriddle.com/script.js").unwrap(),
+            origin: Origin::Tuple("https".to_string(), url::Host::Domain("notriddle.com".to_owned()), 443),
+            redirect_count: 0,
+            destination: Destination::Script,
+            initiator: Initiator::Prefetch,
+            nonce: String::new(),
+            integrity_metadata: String::new(),
+            parser_metadata: ParserMetadata::None,
+        };
+
+        let p = Policy::parse("default-src 'none'; child-src 'self'", PolicySource::Header, PolicyDisposition::Enforce);
+        
+        let violation_result = p.does_request_violate_policy(&request);
+
+        assert!(violation_result == Violates::DoesNotViolate);        
+    }    
 }
