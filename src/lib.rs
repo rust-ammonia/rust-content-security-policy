@@ -415,8 +415,7 @@ impl Destination {
 }
 
 /**
-response to be validated
- 
+response to be validated 
 https://fetch.spec.whatwg.org/#concept-response
 */
 #[derive(Clone, Debug)]
@@ -448,7 +447,7 @@ pub enum ViolationResource {
     Inline {
         report_sample: bool,
     },
-    }
+}
 
 /**
 Many algorithms are allowed to return either "Allowed" or "Blocked".
@@ -660,7 +659,7 @@ impl Directive {
                 }
                 Allowed
             }
-                        _ => Allowed,
+            _ => Allowed,
         }
     }
     /// https://www.w3.org/TR/CSP/#directive-post-request-check
