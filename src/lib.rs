@@ -387,7 +387,10 @@ pub enum Destination {
     Document,
     Embed,
     Font,
+    Frame,
+    IFrame,
     Image,
+    Json,
     Manifest,
     Object,
     PaintWorklet,
@@ -398,6 +401,7 @@ pub enum Destination {
     Style,
     Track,
     Video,
+    WebIdentity,
     Worker,
     Xslt,
 }
@@ -412,7 +416,7 @@ impl Destination {
 
 /**
 response to be validated
-
+ 
 https://fetch.spec.whatwg.org/#concept-response
 */
 #[derive(Clone, Debug)]
@@ -444,7 +448,7 @@ pub enum ViolationResource {
     Inline {
         report_sample: bool,
     },
-}
+    }
 
 /**
 Many algorithms are allowed to return either "Allowed" or "Blocked".
@@ -593,16 +597,6 @@ impl Directive {
                 }
                 Allowed
             }
-            "prefetch-src" => {
-                let name = get_the_effective_directive_for_request(request);
-                if !should_fetch_directive_execute(name, "prefetch-src", policy) {
-                    return Allowed;
-                }
-                if SourceList(&self.value[..]).does_request_match_source_list(request) == DoesNotMatch {
-                    return Blocked;
-                }
-                Allowed
-            }
             "object-src" => {
                 let name = get_the_effective_directive_for_request(request);
                 if !should_fetch_directive_execute(name, "object-src", policy) {
@@ -666,7 +660,7 @@ impl Directive {
                 }
                 Allowed
             }
-            _ => Allowed,
+                        _ => Allowed,
         }
     }
     /// https://www.w3.org/TR/CSP/#directive-post-request-check
@@ -751,17 +745,6 @@ impl Directive {
             "media-src" => {
                 let name = get_the_effective_directive_for_request(request);
                 if !should_fetch_directive_execute(name, "media-src", policy) {
-                    return Allowed;
-                }
-                let source_list = SourceList(&self.value);
-                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
-                    return Blocked;
-                }
-                Allowed
-            }
-            "prefetch-src" => {
-                let name = get_the_effective_directive_for_request(request);
-                if !should_fetch_directive_execute(name, "prefetch-src", policy) {
                     return Allowed;
                 }
                 let source_list = SourceList(&self.value);
@@ -1065,7 +1048,6 @@ fn get_fetch_directive_fallback_list(directive_name: &str) -> &'static [&'static
         "worker-src"      => &["worker-src", "child-src", "script-src", "default-src"],
         "connect-src"     => &["connect-src", "default-src"],
         "manifest-src"    => &["manifest-src", "default-src"],
-        "prefetch-src"    => &["prefetch-src", "default-src"],
         "object-src"      => &["object-src", "default-src"],
         "frame-src"       => &["frame-src", "child-src", "default-src"],
         "media-src"       => &["media-src", "default-src"],
@@ -1083,19 +1065,21 @@ fn get_the_effective_directive_for_request(request: &Request) -> &'static str {
         return "connect-src";
     }
     if request.initiator == Prefetch || request.initiator == Prerender {
-        return "prefetch-src";
+        return "default-src";
     }
     match request.destination {
         Manifest => "manifest-src",
         Object | Embed => "object-src",
-        Document => "frame-src",
+        Frame | IFrame => "frame-src",
         Audio | Track | Video => "media-src",
         Font => "font-src",
         Image => "img-src",
         Style => "style-src-elem",
-        Script | Xslt => "script-src-elem",
+        Script | Xslt | AudioWorklet | PaintWorklet => "script-src-elem",
         ServiceWorker | SharedWorker | Worker => "worker-src",
-        _ => "",
+        Json | WebIdentity => "connect-src",
+        Report => "",
+        _ => "connect-src",
     }
 }
 
