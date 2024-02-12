@@ -1172,7 +1172,7 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
         if type_ == InlineCheckType::Script || type_ == InlineCheckType::Style {
             if let Some(nonce) = element.nonce.as_ref() {
                 for expression in self.0.clone().into_iter().map(Borrow::borrow) {
-                    if let Some(captures) = NONCE_SOURCE_GRAMMAR.captures(expression.borrow()) {
+                    if let Some(captures) = NONCE_SOURCE_GRAMMAR.captures(expression) {
                         if let Some(captured_nonce) = captures.name("n") {
                             if nonce == captured_nonce.as_str() {
                                 return Matches;
@@ -1191,7 +1191,7 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
         }
         if type_ == InlineCheckType::Script || type_ == InlineCheckType::Style || unsafe_hashes {
             for expression in self.0.clone().into_iter().map(Borrow::borrow) {
-                if let Some(captures) = HASH_SOURCE_GRAMMAR.captures(expression.borrow()) {
+                if let Some(captures) = HASH_SOURCE_GRAMMAR.captures(expression) {
                     if let (Some(algorithm), Some(value)) = (captures.name("algorithm").and_then(|a| HashAlgorithm::from_name(a.as_str())), captures.name("value")) {
                         let actual = algorithm.apply(source);
                         let expected = value.as_str().replace('-', "+").replace('_', "/");
