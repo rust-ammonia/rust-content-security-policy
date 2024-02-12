@@ -410,7 +410,10 @@ pub enum Destination {
     Document,
     Embed,
     Font,
+    Frame,
+    IFrame,
     Image,
+    Json,
     Manifest,
     Object,
     PaintWorklet,
@@ -421,6 +424,7 @@ pub enum Destination {
     Style,
     Track,
     Video,
+    WebIdentity,
     Worker,
     Xslt,
 }
@@ -434,8 +438,7 @@ impl Destination {
 }
 
 /**
-response to be validated
-
+response to be validated 
 https://fetch.spec.whatwg.org/#concept-response
 */
 #[derive(Clone, Debug)]
@@ -616,16 +619,6 @@ impl Directive {
                 }
                 Allowed
             }
-            "prefetch-src" => {
-                let name = get_the_effective_directive_for_request(request);
-                if !should_fetch_directive_execute(name, "prefetch-src", policy) {
-                    return Allowed;
-                }
-                if SourceList(&self.value[..]).does_request_match_source_list(request) == DoesNotMatch {
-                    return Blocked;
-                }
-                Allowed
-            }
             "object-src" => {
                 let name = get_the_effective_directive_for_request(request);
                 if !should_fetch_directive_execute(name, "object-src", policy) {
@@ -774,17 +767,6 @@ impl Directive {
             "media-src" => {
                 let name = get_the_effective_directive_for_request(request);
                 if !should_fetch_directive_execute(name, "media-src", policy) {
-                    return Allowed;
-                }
-                let source_list = SourceList(&self.value);
-                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
-                    return Blocked;
-                }
-                Allowed
-            }
-            "prefetch-src" => {
-                let name = get_the_effective_directive_for_request(request);
-                if !should_fetch_directive_execute(name, "prefetch-src", policy) {
                     return Allowed;
                 }
                 let source_list = SourceList(&self.value);
@@ -1088,7 +1070,6 @@ fn get_fetch_directive_fallback_list(directive_name: &str) -> &'static [&'static
         "worker-src"      => &["worker-src", "child-src", "script-src", "default-src"],
         "connect-src"     => &["connect-src", "default-src"],
         "manifest-src"    => &["manifest-src", "default-src"],
-        "prefetch-src"    => &["prefetch-src", "default-src"],
         "object-src"      => &["object-src", "default-src"],
         "frame-src"       => &["frame-src", "child-src", "default-src"],
         "media-src"       => &["media-src", "default-src"],
@@ -1106,19 +1087,21 @@ fn get_the_effective_directive_for_request(request: &Request) -> &'static str {
         return "connect-src";
     }
     if request.initiator == Prefetch || request.initiator == Prerender {
-        return "prefetch-src";
+        return "default-src";
     }
     match request.destination {
         Manifest => "manifest-src",
         Object | Embed => "object-src",
-        Document => "frame-src",
+        Frame | IFrame => "frame-src",
         Audio | Track | Video => "media-src",
         Font => "font-src",
         Image => "img-src",
         Style => "style-src-elem",
-        Script | Xslt => "script-src-elem",
+        Script | Xslt | AudioWorklet | PaintWorklet => "script-src-elem",
         ServiceWorker | SharedWorker | Worker => "worker-src",
-        _ => "",
+        Json | WebIdentity => "connect-src",
+        Report => "",
+        _ => "connect-src",
     }
 }
 
@@ -1211,7 +1194,7 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
         if type_ == InlineCheckType::Script || type_ == InlineCheckType::Style {
             if let Some(nonce) = element.nonce.as_ref() {
                 for expression in self.0.clone().into_iter().map(Borrow::borrow) {
-                    if let Some(captures) = NONCE_SOURCE_GRAMMAR.captures(expression.borrow()) {
+                    if let Some(captures) = NONCE_SOURCE_GRAMMAR.captures(expression) {
                         if let Some(captured_nonce) = captures.name("n") {
                             if nonce == captured_nonce.as_str() {
                                 return Matches;
@@ -1230,7 +1213,7 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
         }
         if type_ == InlineCheckType::Script || type_ == InlineCheckType::Style || unsafe_hashes {
             for expression in self.0.clone().into_iter().map(Borrow::borrow) {
-                if let Some(captures) = HASH_SOURCE_GRAMMAR.captures(expression.borrow()) {
+                if let Some(captures) = HASH_SOURCE_GRAMMAR.captures(expression) {
                     if let (Some(algorithm), Some(value)) = (captures.name("algorithm").and_then(|a| HashAlgorithm::from_name(a.as_str())), captures.name("value")) {
                         let actual = algorithm.apply(source);
                         let expected = value.as_str().replace('-', "+").replace('_', "/");
