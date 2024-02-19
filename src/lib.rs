@@ -1631,18 +1631,18 @@ mod test {
             url: Url::parse("https://www.notriddle.com/script.js").unwrap(),
             origin: Origin::Tuple("https".to_string(), url::Host::Domain("notriddle.com".to_owned()), 443),
             redirect_count: 0,
-            destination: Destination::Script,
-            initiator: Initiator::Prefetch,
+            destination: Destination::ServiceWorker,
+            initiator: Initiator::None,
             nonce: String::new(),
             integrity_metadata: String::new(),
             parser_metadata: ParserMetadata::None,
         };
 
-        let p = Policy::parse("default-src 'none' ", PolicySource::Header, PolicyDisposition::Enforce);
+        let p = Policy::parse("default-src 'none'; script-src 'self' ", PolicySource::Header, PolicyDisposition::Enforce);
         
         let violation_result = p.does_request_violate_policy(&request);
 
-        let expected_result = Violates::Directive(Directive { name: String::from("default-src"), value: vec![String::from("'none'")] });
+        let expected_result = Violates::Directive(Directive { name: String::from("script-src"), value: vec![String::from("'self'")] });
 
         assert!(violation_result == expected_result);        
     }
