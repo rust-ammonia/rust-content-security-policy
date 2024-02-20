@@ -4,11 +4,12 @@ version = "0.5.1"
 authors = ["Michael Howell <michael@notriddle.com>"]
 description = "Will parse and validate Content-Security-Policy level 3"
 keywords = ["http", "csp", "security"]
-license = "MIT / Apache-2.0"
+license = "MIT OR Apache-2.0"
 readme = "README.md"
 documentation = "https://docs.rs/content-security-policy/"
 repository = "https://github.com/rust-ammonia/rust-content-security-policy"
 edition = "2018"
+rust-version = "1.70"
 exclude = [
   "Cargo.nix",
   "default.nix",
