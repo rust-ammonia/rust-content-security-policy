@@ -342,6 +342,32 @@ impl CspList {
             })
             .next()
     }
+    /// https://www.w3.org/TR/CSP/#can-compile-strings
+    pub fn is_js_evaluation_allowed(&self) -> CheckResult {
+        let mut allowed = CheckResult::Allowed;
+        for policy in &self.0 {
+            for directive in &policy.directive_set {
+                if matches!(allowed, CheckResult::Allowed) {
+                    allowed = directive.is_js_evaluation_allowed(&policy);
+                    if matches!(allowed, CheckResult::Blocked) { return CheckResult::Blocked };
+                }
+            }
+        }
+        CheckResult::Allowed
+    }
+    /// https://www.w3.org/TR/CSP/#can-compile-wasm-bytes
+    pub fn is_wasm_evaluation_allowed(&self) -> CheckResult {
+        let mut allowed = CheckResult::Allowed;
+        for policy in &self.0 {
+            for directive in &policy.directive_set {
+                if matches!(allowed, CheckResult::Allowed) {
+                    allowed = directive.is_wasm_evaluation_allowed(&policy);
+                    if matches!(allowed, CheckResult::Blocked) { return CheckResult::Blocked };
+                }
+            }
+        }
+        CheckResult::Allowed
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -438,7 +464,7 @@ impl Destination {
 }
 
 /**
-response to be validated 
+response to be validated
 https://fetch.spec.whatwg.org/#concept-response
 */
 #[derive(Clone, Debug)]
@@ -964,6 +990,28 @@ impl Directive {
             _ => None,
         }
     }
+    /// https://www.w3.org/TR/CSP/#can-compile-strings
+    pub fn is_js_evaluation_allowed(&self, policy: &Policy) -> CheckResult {
+        let source_list = SourceList(&self.value);
+        match &self.name[..] {
+            "script-src" | "default-src" => match source_list.does_a_source_list_allow_js_evaluation(&policy.disposition) {
+                AllowResult::Allows => CheckResult::Allowed,
+                AllowResult::DoesNotAllow => CheckResult::Blocked,
+            },
+            _ => CheckResult::Blocked
+        }
+    }
+    /// https://www.w3.org/TR/CSP/#can-compile-wasm-bytes
+    pub fn is_wasm_evaluation_allowed(&self, policy: &Policy) -> CheckResult {
+        let source_list = SourceList(&self.value);
+        match &self.name[..] {
+            "script-src" | "default-src" => match source_list.does_a_source_list_allow_wasm_evaluation(&policy.disposition) {
+                AllowResult::Allows => CheckResult::Allowed,
+                AllowResult::DoesNotAllow => CheckResult::Blocked
+            },
+            _ => CheckResult::Blocked
+        }
+    }
 }
 
 /// https://www.w3.org/TR/CSP/#effective-directive-for-inline-check
@@ -1257,6 +1305,27 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
             &request.origin,
             response.redirect_count,
         )
+    }
+    /// https://www.w3.org/TR/CSP/#can-compile-strings
+    fn does_a_source_list_allow_js_evaluation(&self, disposition: &PolicyDisposition) -> AllowResult {
+        if matches!(disposition, PolicyDisposition::Report) { return AllowResult::Allows };
+        for expression in self.0.clone().into_iter().map(Borrow::borrow) {
+            if ascii_case_insensitive_match(expression, "'unsafe-eval'") {
+                return AllowResult::Allows;
+            }
+        }
+        AllowResult::DoesNotAllow
+    }
+    /// https://www.w3.org/TR/CSP/#can-compile-wasm-bytes
+    fn does_a_source_list_allow_wasm_evaluation(&self, disposition: &PolicyDisposition) -> AllowResult {
+        if matches!(disposition, PolicyDisposition::Report) { return AllowResult::Allows };
+        for expression in self.0.clone().into_iter().map(Borrow::borrow) {
+            if ascii_case_insensitive_match(expression, "'unsafe-eval'") ||
+                ascii_case_insensitive_match(expression, "'wasm-unsafe-eval'") {
+                return AllowResult::Allows;
+            }
+        }
+        AllowResult::DoesNotAllow
     }
 }
 
@@ -1619,7 +1688,7 @@ mod test {
         };
 
         let p = Policy::parse("child-src 'self'", PolicySource::Header, PolicyDisposition::Enforce);
-        
+
         let violation_result = p.does_request_violate_policy(&request);
 
         assert!(violation_result == Violates::DoesNotViolate);
@@ -1639,12 +1708,12 @@ mod test {
         };
 
         let p = Policy::parse("default-src 'none'; script-src 'self' ", PolicySource::Header, PolicyDisposition::Enforce);
-        
+
         let violation_result = p.does_request_violate_policy(&request);
 
         let expected_result = Violates::Directive(Directive { name: String::from("script-src"), value: vec![String::from("'self'")] });
 
-        assert!(violation_result == expected_result);        
+        assert!(violation_result == expected_result);
     }
 
     #[test]
@@ -1661,9 +1730,9 @@ mod test {
         };
 
         let p = Policy::parse("default-src 'none'; child-src 'self'", PolicySource::Header, PolicyDisposition::Enforce);
-        
+
         let violation_result = p.does_request_violate_policy(&request);
 
-        assert!(violation_result == Violates::DoesNotViolate);        
-    }    
+        assert!(violation_result == Violates::DoesNotViolate);
+    }
 }
