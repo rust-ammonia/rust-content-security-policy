@@ -998,7 +998,7 @@ impl Directive {
                 AllowResult::Allows => CheckResult::Allowed,
                 AllowResult::DoesNotAllow => CheckResult::Blocked,
             },
-            _ => CheckResult::Blocked
+            _ => CheckResult::Allowed
         }
     }
     /// https://www.w3.org/TR/CSP/#can-compile-wasm-bytes
@@ -1009,7 +1009,7 @@ impl Directive {
                 AllowResult::Allows => CheckResult::Allowed,
                 AllowResult::DoesNotAllow => CheckResult::Blocked
             },
-            _ => CheckResult::Blocked
+            _ => CheckResult::Allowed
         }
     }
 }
