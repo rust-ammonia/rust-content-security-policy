@@ -471,5 +471,12 @@ test_should_js_wasm_evaluation_be_blocked!{
         disposition: Report,
         kind: is_wasm_evaluation_allowed,
         result: Allowed
+    ),
+    (
+        name: eval_javascript_works_if_multiple_policies_were_passed,
+        policy: "script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self';",
+        disposition: Enforce,
+        kind: is_js_evaluation_allowed,
+        result: Allowed
     )
 }
