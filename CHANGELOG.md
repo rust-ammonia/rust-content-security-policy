@@ -1,5 +1,11 @@
 # Unreleased
 
+# 0.5.2
+
+* Minimum supported Rust version: 1.70
+* Update logic for policy violation to match spec
+* Remove `prefetch-src`, since that's deprecated
+
 # 0.5.1
 
 * Minimum supported Rust version: 1.60.0
