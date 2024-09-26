@@ -47,6 +47,7 @@ pub use url::{Origin, Url};
 use sha2::Digest;
 use std::borrow::{Borrow, Cow};
 use std::fmt::{self, Display, Formatter};
+use std::str::FromStr;
 use text_util::{
     strip_leading_and_trailing_ascii_whitespace,
     split_ascii_whitespace,
@@ -455,11 +456,76 @@ pub enum Destination {
     Xslt,
 }
 
+pub struct InvalidDestination;
+
+impl FromStr for Destination {
+    type Err = InvalidDestination;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let destination = match s {
+            "" => Self::None,
+            "audio" => Self::Audio,
+            "audioworklet" => Self::AudioWorklet,
+            "document" => Self::Document,
+            "embed" => Self::Embed,
+            "font" => Self::Font,
+            "frame" => Self::Frame,
+            "iframe" => Self::IFrame,
+            "image" => Self::Image,
+            "json" => Self::Json,
+            "manifest" => Self::Manifest,
+            "object" => Self::Object,
+            "paintworklet" => Self::PaintWorklet,
+            "report" => Self::Report,
+            "script" => Self::Script,
+            "serviceworker" => Self::ServiceWorker,
+            "sharedworker" => Self::SharedWorker,
+            "style" => Self::Style,
+            "track" => Self::Track,
+            "video" => Self::Video,
+            "webidentity" => Self::WebIdentity,
+            "worker" => Self::Worker,
+            "xslt" => Self::Xslt,
+            _ => return Err(InvalidDestination),
+        };
+
+        Ok(destination)
+    }
+}
+
 impl Destination {
     /// https://fetch.spec.whatwg.org/#request-destination-script-like
     pub fn is_script_like(self) -> bool {
         use Destination::*;
         matches!(self, AudioWorklet | PaintWorklet | Script | ServiceWorker | SharedWorker | Worker | Xslt)
+    }
+
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::None => "",
+            Self::Audio => "audio",
+            Self::AudioWorklet => "audioworklet",
+            Self::Document => "document",
+            Self::Embed => "embed",
+            Self::Font => "font",
+            Self::Frame => "frame",
+            Self::IFrame => "iframe",
+            Self::Image => "image",
+            Self::Json => "json",
+            Self::Manifest => "manifest",
+            Self::Object => "object",
+            Self::PaintWorklet => "paintworklet",
+            Self::Report => "report",
+            Self::Script => "script",
+            Self::ServiceWorker => "serviceworker",
+            Self::SharedWorker => "sharedworker",
+            Self::Style => "style",
+            Self::Track => "track",
+            Self::Video => "video",
+            Self::WebIdentity => "webidentity",
+            Self::Worker => "worker",
+            Self::Xslt => "xslt",
+        }
     }
 }
 
