@@ -345,29 +345,39 @@ impl CspList {
     }
     /// https://www.w3.org/TR/CSP/#can-compile-strings
     pub fn is_js_evaluation_allowed(&self) -> CheckResult {
-        let mut allowed = CheckResult::Allowed;
+        let mut result = CheckResult::Allowed;
         for policy in &self.0 {
-            for directive in &policy.directive_set {
-                if matches!(allowed, CheckResult::Allowed) {
-                    allowed = directive.is_js_evaluation_allowed(&policy);
-                    if matches!(allowed, CheckResult::Blocked) { return CheckResult::Blocked };
-                }
+            let source_list = policy.directive_set
+                .iter()
+                .find(|directive| directive.name == "script-src")
+                .or_else(|| policy.directive_set.iter().find(|directive| directive.name == "default-src"))
+                .map(|directive| SourceList(&directive.value));
+            if let Some(source_list) = source_list {
+                result = match source_list.does_a_source_list_allow_js_evaluation(&policy.disposition) {
+                    AllowResult::Allows => CheckResult::Allowed,
+                    AllowResult::DoesNotAllow => CheckResult::Blocked,
+                };
             }
         }
-        CheckResult::Allowed
+        result
     }
     /// https://www.w3.org/TR/CSP/#can-compile-wasm-bytes
     pub fn is_wasm_evaluation_allowed(&self) -> CheckResult {
-        let mut allowed = CheckResult::Allowed;
+        let mut result = CheckResult::Allowed;
         for policy in &self.0 {
-            for directive in &policy.directive_set {
-                if matches!(allowed, CheckResult::Allowed) {
-                    allowed = directive.is_wasm_evaluation_allowed(&policy);
-                    if matches!(allowed, CheckResult::Blocked) { return CheckResult::Blocked };
-                }
+            let source_list = policy.directive_set
+                .iter()
+                .find(|directive| directive.name == "script-src")
+                .or_else(|| policy.directive_set.iter().find(|directive| directive.name == "default-src"))
+                .map(|directive| SourceList(&directive.value));
+            if let Some(source_list) = source_list {
+                result = match source_list.does_a_source_list_allow_wasm_evaluation(&policy.disposition) {
+                    AllowResult::Allows => CheckResult::Allowed,
+                    AllowResult::DoesNotAllow => CheckResult::Blocked,
+                };
             }
         }
-        CheckResult::Allowed
+        result
     }
 }
 
@@ -1054,28 +1064,6 @@ impl Directive {
                 }
             },
             _ => None,
-        }
-    }
-    /// https://www.w3.org/TR/CSP/#can-compile-strings
-    pub fn is_js_evaluation_allowed(&self, policy: &Policy) -> CheckResult {
-        let source_list = SourceList(&self.value);
-        match &self.name[..] {
-            "script-src" | "default-src" => match source_list.does_a_source_list_allow_js_evaluation(&policy.disposition) {
-                AllowResult::Allows => CheckResult::Allowed,
-                AllowResult::DoesNotAllow => CheckResult::Blocked,
-            },
-            _ => CheckResult::Allowed
-        }
-    }
-    /// https://www.w3.org/TR/CSP/#can-compile-wasm-bytes
-    pub fn is_wasm_evaluation_allowed(&self, policy: &Policy) -> CheckResult {
-        let source_list = SourceList(&self.value);
-        match &self.name[..] {
-            "script-src" | "default-src" => match source_list.does_a_source_list_allow_wasm_evaluation(&policy.disposition) {
-                AllowResult::Allows => CheckResult::Allowed,
-                AllowResult::DoesNotAllow => CheckResult::Blocked
-            },
-            _ => CheckResult::Allowed
         }
     }
 }
