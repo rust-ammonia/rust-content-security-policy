@@ -1,6 +1,6 @@
 [package]
 name = "content-security-policy"
-version = "0.5.2"
+version = "0.5.3"
 authors = ["Michael Howell <michael@notriddle.com>"]
 description = "Will parse and validate Content-Security-Policy level 3"
 keywords = ["http", "csp", "security"]
