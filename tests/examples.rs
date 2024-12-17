@@ -472,6 +472,21 @@ test_should_js_wasm_evaluation_be_blocked!{
         kind: is_wasm_evaluation_allowed,
         result: Allowed
     ),
+
+    // https://github.com/rust-ammonia/rust-content-security-policy/issues/48
+    (   name: eval_webassembly_default_src_override,
+        policy: "default-src self; script-src self 'unsafe-eval'",
+        disposition: Enforce,
+        kind: is_wasm_evaluation_allowed,
+        result: Allowed
+    ),
+    (   name: eval_javascript_default_src_override,
+        policy: "default-src self; script-src self 'unsafe-eval'",
+        disposition: Enforce,
+        kind: is_js_evaluation_allowed,
+        result: Allowed
+    ),
+
     (
         name: eval_javascript_works_if_multiple_policies_were_passed,
         policy: "script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self';",

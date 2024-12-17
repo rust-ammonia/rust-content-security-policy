@@ -1,5 +1,10 @@
 # Unreleased
 
+# 0.5.3
+
+* Minimum supported Rust version: 1.71.1
+* Fix default-src behavior with eval
+
 # 0.5.2
 
 * Minimum supported Rust version: 1.70
