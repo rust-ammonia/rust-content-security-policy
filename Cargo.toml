@@ -11,6 +11,7 @@ repository = "https://github.com/rust-ammonia/rust-content-security-policy"
 edition = "2018"
 rust-version = "1.71.1"
 exclude = [
+  "Cargo.lock",
   "Cargo.nix",
   "default.nix",
   "nix/",
