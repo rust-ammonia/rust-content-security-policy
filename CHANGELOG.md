@@ -1,5 +1,10 @@
 # Unreleased
 
+# 0.6.0
+
+* Minimum supported Rust version: 1.81.0
+* chore: bump base64 dependency
+
 # 0.5.3
 
 * Minimum supported Rust version: 1.71.1
