@@ -1,5 +1,11 @@
 # Unreleased
 
+# 0.5.4
+
+* Minimum supported Rust version: 1.81.0
+* chore: bump base64 dependency
+* Fix strict-dynamic handling on non-parser-inserted `<script>`
+
 # 0.5.3
 
 * Minimum supported Rust version: 1.71.1

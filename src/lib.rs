@@ -1079,7 +1079,7 @@ fn get_the_effective_directive_for_inline_checks(type_: InlineCheckType) -> &'st
     }
 }
 
-/// https://www.w3.org/TR/CSP/#script-pre-request
+/// <https://www.w3.org/TR/CSP/#script-pre-request>
 fn script_directives_prerequest_check(request: &Request, directive: &Directive) -> CheckResult {
     use CheckResult::*;
     if request_is_script_like(request) {
@@ -1110,14 +1110,16 @@ fn script_directives_prerequest_check(request: &Request, directive: &Directive) 
                     return Allowed;
                 }
             }
-            if directive.value.iter().any(|ex| ascii_case_insensitive_match(ex, "'strict-dynamic'")) {
-                if request.parser_metadata == ParserMetadata::ParserInserted {
-                    return Blocked;
-                } else {
-                    return Allowed;
-                }
+        }
+
+        if directive.value.iter().any(|ex| ascii_case_insensitive_match(ex, "'strict-dynamic'")) {
+            if request.parser_metadata == ParserMetadata::ParserInserted {
+                return Blocked;
+            } else {
+                return Allowed;
             }
         }
+
         if source_list.does_request_match_source_list(request) == DoesNotMatch {
             return Blocked;
         }
