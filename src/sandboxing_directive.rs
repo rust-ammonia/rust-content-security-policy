@@ -1,7 +1,9 @@
+#[cfg(feature = "serde")] use serde::{Deserialize, Serialize};
 use bitflags::bitflags;
 
 bitflags!{
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
     pub struct SandboxingFlagSet: u32 {
         const SANDBOXED_NAVIGATION_BROWSING_CONTEXT_FLAG = 0x00000001;
         const SANDBOXED_AUXILIARY_NAVIGATION_BROWSING_CONTEXT_FLAG = 0x00000002;
@@ -21,6 +23,7 @@ bitflags!{
         const SANDBOXED_MODALS_FLAG = 0x00002000;
         const SANDBOXED_ORIENTATION_LOCK_BROWSING_CONTEXT_FLAG = 0x00004000;
         const SANDBOXED_PRESENTATION_BROWSING_CONTEXT_FLAG = 0x00008000;
+        const SANDBOXED_DOWNLOADS_BROWSING_CONTEXT_FLAG = 0x0010000;
     }
 }
 
@@ -28,6 +31,7 @@ pub fn parse_a_sandboxing_directive(tokens: &[String]) -> SandboxingFlagSet {
     let mut output = SandboxingFlagSet::all();
     for token in tokens {
         let remove = match &token[..] {
+            "allow-downloads" => SandboxingFlagSet::SANDBOXED_DOWNLOADS_BROWSING_CONTEXT_FLAG,
             "allow-popups" =>
                 SandboxingFlagSet::SANDBOXED_AUXILIARY_NAVIGATION_BROWSING_CONTEXT_FLAG,
             "allow-top-navigation" =>

@@ -432,9 +432,13 @@ pub enum ParserMetadata {
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Initiator {
+    Download,
+    ImageSet,
+    Manifest,
     Prefetch,
     Prerender,
     Fetch,
+    Xslt,
     None,
 }
 
@@ -1194,14 +1198,14 @@ fn get_the_effective_directive_for_request(request: &Request) -> &'static str {
         return "default-src";
     }
     match request.destination {
-        Manifest => "manifest-src",
+        Destination::Manifest => "manifest-src",
         Object | Embed => "object-src",
         Frame | IFrame => "frame-src",
         Audio | Track | Video => "media-src",
         Font => "font-src",
         Image => "img-src",
         Style => "style-src-elem",
-        Script | Xslt | AudioWorklet | PaintWorklet => "script-src-elem",
+        Script | Destination::Xslt | AudioWorklet | PaintWorklet => "script-src-elem",
         ServiceWorker | SharedWorker | Worker => "worker-src",
         Json | WebIdentity => "connect-src",
         Report => "",
