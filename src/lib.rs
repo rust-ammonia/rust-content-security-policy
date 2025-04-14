@@ -290,7 +290,10 @@ impl CspList {
                 let report_sample = directive.value.iter().any(|t| &t[..] == "'report-sample'");
                 let violation = Violation {
                     resource: ViolationResource::Inline{ report_sample },
-                    directive: directive.clone(),
+                    directive: Directive {
+                        name: get_the_effective_directive_for_inline_checks(type_).to_owned(),
+                        value: directive.value.clone(),
+                    },
                 };
                 violations.push(violation);
                 if policy.disposition == PolicyDisposition::Enforce {
