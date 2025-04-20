@@ -46,6 +46,7 @@ pub use url::{Origin, Url};
 #[cfg(feature = "serde")] use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::borrow::{Borrow, Cow};
+use std::cmp;
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
 use text_util::{
@@ -219,7 +220,7 @@ impl CspList {
             let violates = policy.does_request_violate_policy(request);
             if let Violates::Directive(directive) = violates {
                 let resource = ViolationResource::Url(request.url.clone());
-                violations.push(Violation { resource, directive });
+                violations.push(Violation { resource, directive, policy: policy.clone(), });
             }
         }
         violations
@@ -239,7 +240,7 @@ impl CspList {
             if let Violates::Directive(directive) = violates {
                 result = CheckResult::Blocked;
                 let resource = ViolationResource::Url(request.url.clone());
-                violations.push(Violation { resource, directive });
+                violations.push(Violation { resource, directive, policy: policy.clone(), });
             }
         }
         (result, violations)
@@ -267,6 +268,7 @@ impl CspList {
                     violations.push(Violation {
                         resource: ViolationResource::Url(request.url.clone()),
                         directive: directive.clone(),
+                        policy: policy.clone(),
                     });
                     // Step 3.1.1.2. If policy’s disposition is "enforce", then set result to "Blocked".
                     if policy.disposition == PolicyDisposition::Enforce {
@@ -287,13 +289,19 @@ impl CspList {
                 if directive.inline_check(element, type_, policy, source) == Allowed {
                     continue;
                 }
-                let report_sample = directive.value.iter().any(|t| &t[..] == "'report-sample'");
+                let sample = if directive.value.iter().any(|t| &t[..] == "'report-sample'") {
+                    let max_length = cmp::min(40, source.len());
+                    Some(source[0..max_length].to_owned())
+                } else {
+                    None
+                };
                 let violation = Violation {
-                    resource: ViolationResource::Inline{ report_sample },
+                    resource: ViolationResource::Inline{ sample },
                     directive: Directive {
                         name: get_the_effective_directive_for_inline_checks(type_).to_owned(),
                         value: directive.value.clone(),
                     },
+                    policy: policy.clone(),
                 };
                 violations.push(violation);
                 if policy.disposition == PolicyDisposition::Enforce {
@@ -316,10 +324,10 @@ impl CspList {
             let directive = policy.directive_set.iter().find(|directive| directive.name == "base-uri");
             if let Some(directive) = directive {
                 if SourceList(&directive.value).does_url_match_source_list_in_origin_with_redirect_count(base, &self_origin, 0) == DoesNotMatch {
-                    let report_sample = directive.value.iter().any(|t| &t[..] == "'report-sample'");
                     let violation = Violation {
                         directive: directive.clone(),
-                        resource: ViolationResource::Inline { report_sample },
+                        resource: ViolationResource::Inline { sample: None },
+                        policy: policy.clone(),
                     };
                     violations.push(violation);
                     if policy.disposition == PolicyDisposition::Enforce {
@@ -330,6 +338,7 @@ impl CspList {
         }
         return (Allowed, violations);
     }
+
     pub fn get_sandboxing_flag_set_for_document(&self) -> Option<SandboxingFlagSet> {
         self.0
             .iter()
@@ -342,40 +351,87 @@ impl CspList {
             .next()
     }
     /// https://www.w3.org/TR/CSP/#can-compile-strings
-    pub fn is_js_evaluation_allowed(&self) -> CheckResult {
+    pub fn is_js_evaluation_allowed(&self, source: &str) -> (CheckResult, Vec<Violation>) {
         let mut result = CheckResult::Allowed;
+        let mut violations = Vec::new();
+        // Step 5: For each policy of global’s CSP list:
         for policy in &self.0 {
-            let source_list = policy.directive_set
+            // Step 5.1: Let source-list be null.
+            let directive = policy.directive_set
                 .iter()
+                // Step 5.3: If policy contains a directive whose name is "script-src",
+                // then set source-list to that directive’s value.
                 .find(|directive| directive.name == "script-src")
-                .or_else(|| policy.directive_set.iter().find(|directive| directive.name == "default-src"))
-                .map(|directive| SourceList(&directive.value));
-            if let Some(source_list) = source_list {
-                result = match source_list.does_a_source_list_allow_js_evaluation(&policy.disposition) {
-                    AllowResult::Allows => CheckResult::Allowed,
-                    AllowResult::DoesNotAllow => CheckResult::Blocked,
-                };
+                // Step 5.4: Otherwise if policy contains a directive whose name is "default-src",
+                // then set source-list to that directive’s value.
+                .or_else(|| policy.directive_set.iter().find(|directive| directive.name == "default-src"));
+            // Step 5.5: If source-list is not null:
+            let Some(directive) = directive else { continue };
+            let source_list = SourceList(&directive.value);
+            if source_list.does_a_source_list_allow_js_evaluation() == AllowResult::Allows {
+                continue;
+            }
+            // Step 5.3.6: If source-list contains the expression "'report-sample'",
+            // then set violation’s sample to the substring of sourceString containing its first 40 characters.
+            let sample = if directive.value.iter().any(|t| &t[..] == "'report-sample'") {
+                let max_length = cmp::min(40, source.len());
+                Some(source[0..max_length].to_owned())
+            } else {
+                None
+            };
+            // Step 5.3.4: Let violation be the result of executing Create a violation object for global, policy,
+            // and directive on global, policy and "require-trusted-types-for"
+            violations.push(Violation {
+                // Step 5.3.5: Set violation’s resource to "eval".
+                resource: ViolationResource::Eval { sample },
+                directive: directive.clone(),
+                policy: policy.clone(),
+            });
+            // Step 5.3.8: If policy’s disposition is "enforce", then set result to "Blocked".
+            if policy.disposition == PolicyDisposition::Enforce {
+                result = CheckResult::Blocked
             }
         }
-        result
+        (result, violations)
     }
     /// https://www.w3.org/TR/CSP/#can-compile-wasm-bytes
-    pub fn is_wasm_evaluation_allowed(&self) -> CheckResult {
+    pub fn is_wasm_evaluation_allowed(&self) -> (CheckResult, Vec<Violation>) {
         let mut result = CheckResult::Allowed;
+        let mut violations = Vec::new();
+        // Step 3: For each policy of global’s CSP list:
         for policy in &self.0 {
-            let source_list = policy.directive_set
+            // Step 3.1: Let source-list be null.
+            let directive = policy.directive_set
                 .iter()
+                // Step 3.2: If policy contains a directive whose name is "script-src",
+                // then set source-list to that directive’s value.
                 .find(|directive| directive.name == "script-src")
-                .or_else(|| policy.directive_set.iter().find(|directive| directive.name == "default-src"))
-                .map(|directive| SourceList(&directive.value));
-            if let Some(source_list) = source_list {
-                result = match source_list.does_a_source_list_allow_wasm_evaluation(&policy.disposition) {
-                    AllowResult::Allows => CheckResult::Allowed,
-                    AllowResult::DoesNotAllow => CheckResult::Blocked,
-                };
+                // Step 3.2: Otherwise if policy contains a directive whose name is "default-src",
+                // then set source-list to that directive’s value.
+                .or_else(|| policy.directive_set.iter().find(|directive| directive.name == "default-src"));
+            let Some(directive) = directive else { continue };
+            let source_list = SourceList(&directive.value);
+            // Step 3.3: If source-list is non-null, and does not contain a source expression
+            // which is an ASCII case-insensitive match for the string "'unsafe-eval'",
+            // and does not contain a source expression which is an ASCII case-insensitive
+            // match for the string "'wasm-unsafe-eval'", then:
+            if source_list.does_a_source_list_allow_wasm_evaluation() == AllowResult::Allows {
+                continue;
+            }
+            // Step 3.3.1: Let violation be the result of executing § 2.4.1 Create a violation
+            // object for global, policy, and directive on global, policy, and "script-src".
+            violations.push(Violation {
+                // Step 5.3.5: Set violation’s resource to "wasm-eval".
+                resource: ViolationResource::WasmEval,
+                directive: directive.clone(),
+                policy: policy.clone(),
+            });
+            // Step 3.3.4: If policy’s disposition is "enforce", then set result to "Blocked".
+            if policy.disposition == PolicyDisposition::Enforce {
+                result = CheckResult::Blocked
             }
         }
-        result
+        (result, violations)
     }
 }
 
@@ -560,6 +616,7 @@ https://www.w3.org/TR/CSP/#violation
 pub struct Violation {
     pub resource: ViolationResource,
     pub directive: Directive,
+    pub policy: Policy,
 }
 
 /**
@@ -571,8 +628,18 @@ https://www.w3.org/TR/CSP/#violation
 pub enum ViolationResource {
     Url(Url),
     Inline {
-        report_sample: bool,
+        sample: Option<String>,
     },
+    TrustedTypePolicy {
+        sample: String,
+    },
+    TrustedTypeSink {
+        sample: String,
+    },
+    Eval {
+        sample: Option<String>,
+    },
+    WasmEval,
 }
 
 /**
@@ -624,9 +691,11 @@ impl Display for Directive {
     fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
         <str as Display>::fmt(&self.name[..], f)?;
         write!(f, " ")?;
-        for token in &self.value {
+        for (i, token) in self.value.iter().enumerate() {
+            if i != 0 {
+                write!(f, " ")?;
+            }
             <str as Display>::fmt(&token[..], f)?;
-            write!(f, " ")?;
         }
         Ok(())
     }
@@ -1063,31 +1132,9 @@ fn script_directives_prerequest_check(request: &Request, directive: &Directive) 
         if source_list.does_nonce_match_source_list(&request.nonce) == Matches {
             return Allowed;
         }
-        let integrity_expressions: Vec<HashFunction> = directive.value.iter()
-            .filter_map(|expression| {
-                if let Some(captures) = HASH_SOURCE_GRAMMAR.captures(expression) {
-                    if let (Some(algorithm), Some(value)) = (captures.name("algorithm").and_then(|a| HashAlgorithm::from_name(a.as_str())), captures.name("value")) {
-                        return Some(HashFunction{ algorithm, value: String::from(value.as_str()) });
-                    }
-                }
-                None
-            })
-            .collect();
-        if !integrity_expressions.is_empty() {
-            let integrity_sources = parse_subresource_integrity_metadata(&request.integrity_metadata);
-            if let SubresourceIntegrityMetadata::IntegritySources(integrity_sources) = integrity_sources {
-                let mut bypass_due_to_integrity_match = true;
-                for source in &integrity_sources {
-                    if integrity_expressions.iter().any(|ex| ex == source) {
-                        bypass_due_to_integrity_match = false;
-                    }
-                }
-                if bypass_due_to_integrity_match {
-                    return Allowed;
-                }
-            }
+        if source_list.does_integrity_metadata_match_source_list(&request.integrity_metadata) == Matches {
+            return Allowed;
         }
-
         if directive.value.iter().any(|ex| ascii_case_insensitive_match(ex, "'strict-dynamic'")) {
             if request.parser_metadata == ParserMetadata::ParserInserted {
                 return Blocked;
@@ -1232,6 +1279,49 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
         }
         DoesNotMatch
     }
+    /// https://www.w3.org/TR/CSP/#match-integrity-metadata-to-source-list
+    fn does_integrity_metadata_match_source_list(&self, integrity_metadata: &str) -> MatchResult {
+        // Step 2: Let integrity expressions be the set of source expressions in source list that match the hash-source grammar.
+        let integrity_expressions: Vec<HashFunction> = self.0.clone().into_iter()
+            .filter_map(|expression| {
+                if let Some(captures) = HASH_SOURCE_GRAMMAR.captures(expression.borrow()) {
+                    if let (Some(algorithm), Some(value)) = (captures.name("algorithm").and_then(|a| HashAlgorithm::from_name(a.as_str())), captures.name("value")) {
+                        return Some(HashFunction{ algorithm, value: String::from(value.as_str()) });
+                    }
+                }
+                None
+            })
+            .collect();
+        // Step 3: If integrity expressions is empty, return "Does Not Match".
+        if integrity_expressions.is_empty() {
+            return DoesNotMatch;
+        }
+        // Step 4: Let integrity sources be the result of executing the algorithm defined in SRI § 3.3.3 Parse metadata. on integrity metadata.
+        let integrity_sources = parse_subresource_integrity_metadata(integrity_metadata);
+        match integrity_sources {
+            // Step 5: If integrity sources is "no metadata" or an empty set, return "Does Not Match".
+            SubresourceIntegrityMetadata::NoMetadata => DoesNotMatch,
+            SubresourceIntegrityMetadata::IntegritySources(integrity_sources) => {
+                if integrity_sources.is_empty() {
+                    return DoesNotMatch;
+                }
+                // Step 6: For each source of integrity sources:
+                for source in &integrity_sources {
+                    // Step 6.1: If integrity expressions does not contain a source expression whose hash-algorithm
+                    // is an ASCII case-insensitive match for source’s hash-algorithm,
+                    // and whose base64-value is identical to source’s base64-value, return "Does Not Match".
+                    //
+                    // Note that the case-insensitivy is already handled in HashAlgorithm::from_name and therefore
+                    // we can do a simple equals check here for both algorithm and value.
+                    if !integrity_expressions.iter().any(|ex| ex == source) {
+                        return DoesNotMatch;
+                    }
+                }
+                // Step 7: Return "Matches".
+                Matches
+            }
+        }
+    }
     /// https://www.w3.org/TR/CSP/#match-request-to-source-list
     fn does_request_match_source_list(&self, request: &Request) -> MatchResult {
         self.does_url_match_source_list_in_origin_with_redirect_count(
@@ -1339,9 +1429,10 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
         )
     }
     /// https://www.w3.org/TR/CSP/#can-compile-strings
-    fn does_a_source_list_allow_js_evaluation(&self, disposition: &PolicyDisposition) -> AllowResult {
-        if matches!(disposition, PolicyDisposition::Report) { return AllowResult::Allows };
+    fn does_a_source_list_allow_js_evaluation(&self) -> AllowResult {
         for expression in self.0.clone().into_iter().map(Borrow::borrow) {
+            // Step 5.3: If source-list contains a source expression which is an ASCII case-insensitive match
+            // for the string "'unsafe-eval'", then skip the following steps.
             if ascii_case_insensitive_match(expression, "'unsafe-eval'") {
                 return AllowResult::Allows;
             }
@@ -1349,8 +1440,7 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
         AllowResult::DoesNotAllow
     }
     /// https://www.w3.org/TR/CSP/#can-compile-wasm-bytes
-    fn does_a_source_list_allow_wasm_evaluation(&self, disposition: &PolicyDisposition) -> AllowResult {
-        if matches!(disposition, PolicyDisposition::Report) { return AllowResult::Allows };
+    fn does_a_source_list_allow_wasm_evaluation(&self) -> AllowResult {
         for expression in self.0.clone().into_iter().map(Borrow::borrow) {
             if ascii_case_insensitive_match(expression, "'unsafe-eval'") ||
                 ascii_case_insensitive_match(expression, "'wasm-unsafe-eval'") {

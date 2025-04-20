@@ -391,13 +391,13 @@ test_should_elements_inline_type_behavior_be_blocked!{
         result: Allowed),
 }
 
-macro_rules! test_should_js_wasm_evaluation_be_blocked {
-    ($((name: $name:ident, policy: $policy:expr, disposition: $disposition:tt, kind: $kind:ident, result: $result:tt)),*$(,)*) => {
+macro_rules! test_should_js_evaluation_be_blocked {
+    ($((name: $name:ident, policy: $policy:expr, disposition: $disposition:tt, result: $result:tt)),*$(,)*) => {
         $(
            #[test]
            fn $name() {
                let csp_list = CspList::parse($policy, PolicySource::Header, PolicyDisposition::$disposition);
-               let check_result = csp_list.$kind();
+               let (check_result, _) = csp_list.is_js_evaluation_allowed("");
                assert_eq!(check_result, CheckResult::$result);
            }
         )*
@@ -405,85 +405,36 @@ macro_rules! test_should_js_wasm_evaluation_be_blocked {
 }
 
 // all tests should have a name starting with eval_
-test_should_js_wasm_evaluation_be_blocked!{
-    (   name: eval_webassembly_with_no_directive,
-        policy: "script-src",
-        disposition: Enforce,
-        kind: is_wasm_evaluation_allowed,
-        result: Blocked
-    ),
+test_should_js_evaluation_be_blocked!{
     (   name: eval_javascript_with_no_directive,
         policy: "script-src",
         disposition: Enforce,
-        kind: is_js_evaluation_allowed,
         result: Blocked
-    ),
-    (   name: eval_webassembly_with_unsafe_eval,
-        policy: "script-src 'unsafe-eval'",
-        disposition: Enforce,
-        kind: is_wasm_evaluation_allowed,
-        result: Allowed
-    ),
-    (   name: eval_webassembly_with_wasm_unsafe_eval,
-        policy: "script-src 'wasm-unsafe-eval'",
-        disposition: Enforce,
-        kind: is_wasm_evaluation_allowed,
-        result: Allowed
-    ),
-    (   name: eval_webassembly_with_uppercase_directive,
-        policy: "script-src 'UNSAFE-EvaL'",
-        disposition: Enforce,
-        kind: is_wasm_evaluation_allowed,
-        result: Allowed
-    ),
-    (   name: eval_webassembly_works_with_default_src,
-        policy: "default-src 'unsafe-eval'",
-        disposition: Enforce,
-        kind: is_wasm_evaluation_allowed,
-        result: Allowed
     ),
     (   name: eval_javascript_works_with_default_src,
         policy: "default-src 'unsafe-eval'",
         disposition: Enforce,
-        kind: is_js_evaluation_allowed,
         result: Allowed
     ),
     (   name: eval_javascript_works_with_script_src,
         policy: "script-src 'unsafe-eval'",
         disposition: Enforce,
-        kind: is_js_evaluation_allowed,
         result: Allowed
     ),
     (   name: eval_javascript_works_with_uppercase_directive,
         policy: "script-src 'UnSAfe-EvAL'",
         disposition: Enforce,
-        kind: is_js_evaluation_allowed,
         result: Allowed
     ),
     (   name: eval_javascript_works_if_report_only,
         policy: "script-src",
         disposition: Report,
-        kind: is_js_evaluation_allowed,
         result: Allowed
     ),
-    (   name: eval_webassembly_works_if_report_only,
-        policy: "script-src",
-        disposition: Report,
-        kind: is_wasm_evaluation_allowed,
-        result: Allowed
-    ),
-
     // https://github.com/rust-ammonia/rust-content-security-policy/issues/48
-    (   name: eval_webassembly_default_src_override,
-        policy: "default-src self; script-src self 'unsafe-eval'",
-        disposition: Enforce,
-        kind: is_wasm_evaluation_allowed,
-        result: Allowed
-    ),
     (   name: eval_javascript_default_src_override,
         policy: "default-src self; script-src self 'unsafe-eval'",
         disposition: Enforce,
-        kind: is_js_evaluation_allowed,
         result: Allowed
     ),
 
@@ -491,7 +442,61 @@ test_should_js_wasm_evaluation_be_blocked!{
         name: eval_javascript_works_if_multiple_policies_were_passed,
         policy: "script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self';",
         disposition: Enforce,
-        kind: is_js_evaluation_allowed,
+        result: Allowed
+    )
+}
+
+
+macro_rules! test_should_wasm_evaluation_be_blocked {
+    ($((name: $name:ident, policy: $policy:expr, disposition: $disposition:tt, result: $result:tt)),*$(,)*) => {
+        $(
+           #[test]
+           fn $name() {
+               let csp_list = CspList::parse($policy, PolicySource::Header, PolicyDisposition::$disposition);
+               let (check_result, _) = csp_list.is_wasm_evaluation_allowed();
+               assert_eq!(check_result, CheckResult::$result);
+           }
+        )*
+    }
+}
+
+// all tests should have a name starting with eval_
+test_should_wasm_evaluation_be_blocked!{
+    (   name: eval_webassembly_with_no_directive,
+        policy: "script-src",
+        disposition: Enforce,
+        result: Blocked
+    ),
+    (   name: eval_webassembly_with_unsafe_eval,
+        policy: "script-src 'unsafe-eval'",
+        disposition: Enforce,
+        result: Allowed
+    ),
+    (   name: eval_webassembly_with_wasm_unsafe_eval,
+        policy: "script-src 'wasm-unsafe-eval'",
+        disposition: Enforce,
+        result: Allowed
+    ),
+    (   name: eval_webassembly_with_uppercase_directive,
+        policy: "script-src 'UNSAFE-EvaL'",
+        disposition: Enforce,
+        result: Allowed
+    ),
+    (   name: eval_webassembly_works_with_default_src,
+        policy: "default-src 'unsafe-eval'",
+        disposition: Enforce,
+        result: Allowed
+    ),
+    (   name: eval_webassembly_works_if_report_only,
+        policy: "script-src",
+        disposition: Report,
+        result: Allowed
+    ),
+
+    // https://github.com/rust-ammonia/rust-content-security-policy/issues/48
+    (   name: eval_webassembly_default_src_override,
+        policy: "default-src self; script-src self 'unsafe-eval'",
+        disposition: Enforce,
         result: Allowed
     )
 }
