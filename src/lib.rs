@@ -524,16 +524,29 @@ impl CspList {
             // Step 5.1: Let source-list be null.
             let directive = policy.directive_set
                 .iter()
-                // Step 5.3: If policy contains a directive whose name is "script-src",
+                // Step 5.2: If policy contains a directive whose name is "script-src",
                 // then set source-list to that directive’s value.
                 .find(|directive| directive.name == "script-src")
-                // Step 5.4: Otherwise if policy contains a directive whose name is "default-src",
+                // Step 5.2: Otherwise if policy contains a directive whose name is "default-src",
                 // then set source-list to that directive’s value.
                 .or_else(|| policy.directive_set.iter().find(|directive| directive.name == "default-src"));
-            // Step 5.5: If source-list is not null:
+            // Step 5.3: If source-list is not null:
             let Some(directive) = directive else { continue };
             let source_list = SourceList(&directive.value);
             if source_list.does_a_source_list_allow_js_evaluation() == AllowResult::Allows {
+                continue;
+            }
+            // Step 5.3.1: Let trustedTypesRequired be the result of executing
+            // Does sink type require trusted types?, with realm, 'script', and false.
+            let trusted_types_required = self.does_sink_type_require_trusted_types("'script'", false);
+            // Step 5.3.2: If trustedTypesRequired is true and source-list contains a source expression
+            // which is an ASCII case-insensitive match for the string "'trusted-types-eval'", then skip the following steps.
+            if trusted_types_required && directive.value.iter().any(|t| ascii_case_insensitive_match(&t[..], "'trusted-types-eval'")) {
+                continue;
+            }
+            // Step 5.3.3: If source-list contains a source expression which is
+            // an ASCII case-insensitive match for the string "'unsafe-eval'", then skip the following steps.
+            if directive.value.iter().any(|t| ascii_case_insensitive_match(&t[..], "'unsafe-eval'")) {
                 continue;
             }
             // Step 5.3.6: If source-list contains the expression "'report-sample'",
@@ -598,6 +611,72 @@ impl CspList {
         }
         (result, violations)
     }
+    /// <https://w3c.github.io/webappsec-csp/#should-block-navigation-request>
+    pub fn should_navigation_request_be_blocked(&self, request: &Request, navigation_check_type: NavigationCheckType) -> (CheckResult, Vec<Violation>) {
+        // Step 1: Let result be "Allowed".
+        let mut result = CheckResult::Allowed;
+        let mut violations = Vec::new();
+        // Step 2: For each policy of navigation request’s policy container’s CSP list:
+        for policy in &self.0 {
+            // Step 2.1: For each directive of policy:
+            for directive in &policy.directive_set {
+                // Step 2.1.1: If directive’s pre-navigation check returns "Allowed"
+                // when executed upon navigation request, type, and policy skip to the next directive.
+                if directive.pre_navigation_check(request, navigation_check_type, policy) == CheckResult::Allowed {
+                    continue;
+                }
+                // Step 2.1.2: Otherwise, let violation be the result of executing
+                // § 2.4.1 Create a violation object for global, policy, and directive
+                // on navigation request’s client’s global object, policy, and directive’s name.
+                violations.push(Violation {
+                    // Step 2.1.3: Set violation’s resource to navigation request’s URL.
+                    resource: ViolationResource::Url(request.url.clone()),
+                    directive: Directive {
+                        name: get_the_effective_directive_for_request(request).to_owned(),
+                        value: directive.value.clone(),
+                    },
+                    policy: policy.clone(),
+                });
+                // Step 2.1.5: If policy’s disposition is "enforce", then set result to "Blocked".
+                if policy.disposition == PolicyDisposition::Enforce {
+                    result = CheckResult::Blocked;
+                }
+            }
+        }
+        // Step 3: If result is "Allowed", and if navigation request’s current URL’s scheme is javascript:
+        if result == CheckResult::Allowed && request.url.scheme() == "javascript" {
+            // Step 3.1: For each policy of navigation request’s policy container’s CSP list:
+            for policy in &self.0 {
+                // Step 3.1.1: For each directive of policy:
+                for directive in &policy.directive_set {
+                    // Step 3.1.1.2: If directive’s inline check returns "Allowed" when executed upon null,
+                    // "navigation" and navigation request’s current URL, skip to the next directive.
+                    if directive.inline_check(&Element { nonce: None }, InlineCheckType::Navigation, policy, request.url.as_str()) == CheckResult::Allowed {
+                        continue;
+                    }
+                    // Step 3.1.1.3: Otherwise, let violation be the result of executing
+                    // § 2.4.1 Create a violation object for global, policy, and directive
+                    // on navigation request’s client’s global object, policy, and directive’s name.
+                    violations.push(Violation {
+                        // Step 3.1.1.4: Set violation’s resource to navigation request’s URL.
+                        resource: ViolationResource::Url(request.url.clone()),
+                        directive: Directive {
+                            // Step 3.1.1.1: Let directive-name be the result of executing
+                            // § 6.8.2 Get the effective directive for inline checks on type.
+                            name: get_the_effective_directive_for_inline_checks(InlineCheckType::Navigation).to_owned(),
+                            value: directive.value.clone(),
+                        },
+                        policy: policy.clone(),
+                    });
+                    // Step 3.1.1.6: If policy’s disposition is "enforce", then set result to "Blocked".
+                    if policy.disposition == PolicyDisposition::Enforce {
+                        result = CheckResult::Blocked;
+                    }
+                }
+            }
+        }
+        (result, violations)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -622,6 +701,17 @@ pub enum InlineCheckType {
     Style,
     StyleAttribute,
     Navigation,
+}
+
+/**
+The valid values for type are "form-submission" and "other".
+
+https://w3c.github.io/webappsec-csp/#directive-pre-navigation-check
+*/
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NavigationCheckType {
+    FormSubmission,
+    Other,
 }
 
 /**
@@ -1276,6 +1366,27 @@ impl Directive {
                 }
             },
             _ => None,
+        }
+    }
+    /// <https://w3c.github.io/webappsec-csp/#directive-pre-navigation-check>
+    pub fn pre_navigation_check(&self, request: &Request, type_: NavigationCheckType, _policy: &Policy) -> CheckResult {
+        use CheckResult::*;
+        match &self.name[..] {
+            // <https://w3c.github.io/webappsec-csp/#form-action-pre-navigate>
+            "form-action" => {
+                // Step 2: If navigation type is "form-submission":
+                if type_ == NavigationCheckType::FormSubmission {
+                    let source_list = SourceList(&self.value);
+                    // Step 2.1: If the result of executing § 6.7.2.5 Does request match source list? on request,
+                    // this directive’s value, and a policy, is "Does Not Match", return "Blocked".
+                    if source_list.does_request_match_source_list(request) == DoesNotMatch {
+                        return Blocked;
+                    }
+                }
+                // Step 3: Return "Allowed".
+                Allowed
+            },
+            _ => Allowed,
         }
     }
 }
