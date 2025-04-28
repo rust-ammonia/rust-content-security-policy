@@ -659,7 +659,7 @@ impl CspList {
                     // on navigation request’s client’s global object, policy, and directive’s name.
                     violations.push(Violation {
                         // Step 3.1.1.4: Set violation’s resource to navigation request’s URL.
-                        resource: ViolationResource::Url(request.url.clone()),
+                        resource: ViolationResource::Inline { sample: None },
                         directive: Directive {
                             // Step 3.1.1.1: Let directive-name be the result of executing
                             // § 6.8.2 Get the effective directive for inline checks on type.
