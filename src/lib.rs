@@ -252,28 +252,23 @@ impl CspList {
     */
     pub fn should_response_to_request_be_blocked(&self, request: &Request, response: &Response)
         -> (CheckResult, Vec<Violation>) {
+        // Step 1. Let CSP list be request’s policy container’s CSP list.
+        // step 2. Let result be "Allowed".
         let mut result = CheckResult::Allowed;
         let mut violations = Vec::new();
+        // Step 3. For each policy of CSP list:
         for policy in &self.0 {
+            // Step 3.1. For each directive of policy:
             for directive in &policy.directive_set {
+                // Step 3.1.1. If the result of executing directive’s post-request check is "Blocked", then:
                 if directive.post_request_check(request, response, policy) == CheckResult::Blocked {
+                    // Step 3.1.1.1. Execute §5.5 Report a violation on the result of executing
+                    // §2.4.2 Create a violation object for request, and policy. on request, and policy.
                     violations.push(Violation {
                         resource: ViolationResource::Url(request.url.clone()),
                         directive: directive.clone(),
                     });
-                    if policy.disposition == PolicyDisposition::Enforce {
-                        result = CheckResult::Blocked;
-                    }
-                }
-            }
-        }
-        for policy in &response.csp_list.0 {
-            for directive in &policy.directive_set {
-                if directive.response_check(request, response, policy) == CheckResult::Blocked {
-                    violations.push(Violation {
-                        resource: ViolationResource::Url(request.url.clone()),
-                        directive: directive.clone(),
-                    });
+                    // Step 3.1.1.2. If policy’s disposition is "enforce", then set result to "Blocked".
                     if policy.disposition == PolicyDisposition::Enforce {
                         result = CheckResult::Blocked;
                     }
@@ -549,7 +544,6 @@ https://fetch.spec.whatwg.org/#concept-response
 */
 #[derive(Clone, Debug)]
 pub struct Response {
-    pub csp_list: CspList,
     pub url: Url,
     pub redirect_count: u32,
 }
@@ -945,31 +939,6 @@ impl Directive {
                 }
                 Allowed
             }
-            _ => Allowed,
-        }
-    }
-    /// https://www.w3.org/TR/CSP/#directive-response-check
-    pub fn response_check(&self, request: &Request, _response: &Response, policy: &Policy) -> CheckResult {
-        use CheckResult::*;
-        use Destination::*;
-        use PolicyDisposition::*;
-        match &self.name[..] {
-            "sandbox" => {
-                if policy.disposition != Enforce {
-                    return Allowed;
-                }
-                match request.destination {
-                    ServiceWorker | SharedWorker | Worker => {
-                        let sandboxing = parse_a_sandboxing_directive(&self.value[..]);
-                        if sandboxing.contains(SandboxingFlagSet::SANDBOXED_SCRIPTS_BROWSING_CONTEXT_FLAG) || sandboxing.contains(SandboxingFlagSet::SANDBOXED_ORIGIN_BROWSING_CONTEXT_FLAG) {
-                            Blocked
-                        } else {
-                            Allowed
-                        }
-                    },
-                    _ => Allowed,
-                }
-            },
             _ => Allowed,
         }
     }
