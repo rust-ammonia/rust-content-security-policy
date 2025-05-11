@@ -1978,9 +1978,9 @@ impl HashAlgorithm {
     pub fn from_name(name: &str) -> Option<HashAlgorithm> {
         use HashAlgorithm::*;
         match name {
-            "sha256" | "Sha256" | "sHa256" | "shA256" | "SHa256" | "sHA256" | "SHA256" => Some(Sha256),
-            "sha384" | "Sha384" | "sHa384" | "shA384" | "SHa384" | "sHA384" | "SHA384" => Some(Sha384),
-            "sha512" | "Sha512" | "sHa512" | "shA512" | "SHa512" | "sHA512" | "SHA512" => Some(Sha512),
+            "sha256" | "Sha256" | "sHa256" | "shA256" | "SHa256" | "ShA256" | "sHA256" | "SHA256" => Some(Sha256),
+            "sha384" | "Sha384" | "sHa384" | "shA384" | "SHa384" | "ShA384" | "sHA384" | "SHA384" => Some(Sha384),
+            "sha512" | "Sha512" | "sHa512" | "shA512" | "SHa512" | "ShA512" | "sHA512" | "SHA512" => Some(Sha512),
             _ => None,
         }
     }
