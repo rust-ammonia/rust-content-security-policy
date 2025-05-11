@@ -1208,7 +1208,7 @@ static HOST_SOURCE_GRAMMAR: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"^((?P<scheme>[a-zA-Z][a-zA-Z0-9\+\-\.]*)://)?(?P<host>\*|(\*\.)?[a-zA-Z0-9\-]+(\.[a-zA-Z0-9\-]+)*)(?P<port>:(\*|[0-9]+))?(?P<path>/([:@%!\$&'\(\)\*\+,;=0-9a-zA-Z\-\._~]+)?(/[:@%!\$&'\(\)\*\+,;=0-9a-zA-Z\-\._~]*)*)?$"#).unwrap());
 /// https://www.w3.org/TR/CSP/#grammardef-hash-source
 static HASH_SOURCE_GRAMMAR: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"^'(?P<algorithm>sha256|sha384|sha512)-(?P<value>[a-zA-Z0-9\+/\-_]+=*)'$"#).unwrap());
+    Lazy::new(|| Regex::new(r#"^'(?P<algorithm>[sS][hH][aA](256|384|512))-(?P<value>[a-zA-Z0-9\+/\-_]+=*)'$"#).unwrap());
 
 /// https://www.w3.org/TR/CSP/#framework-directive-source-list
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1643,7 +1643,7 @@ pub enum SubresourceIntegrityMetadata {
 /// https://www.w3.org/TR/SRI/#the-integrity-attribute
 /// This corresponds to the "hash-expression" grammar.
 static SUBRESOURCE_METADATA_GRAMMAR: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"(?P<algorithm>sha256|sha384|sha512)-(?P<value>[a-zA-Z0-9\+/\-_]+=*)"#).unwrap());
+    Lazy::new(|| Regex::new(r#"(?P<algorithm>[sS][hH][aA](256|384|512))-(?P<value>[a-zA-Z0-9\+/\-_]+=*)"#).unwrap());
 
 /// https://www.w3.org/TR/SRI/#parse-metadata
 pub fn parse_subresource_integrity_metadata(string: &str) -> SubresourceIntegrityMetadata {
