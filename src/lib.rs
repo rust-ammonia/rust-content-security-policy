@@ -1160,12 +1160,11 @@ fn get_fetch_directive_fallback_list(directive_name: &str) -> &'static [&'static
 fn get_the_effective_directive_for_request(request: &Request) -> &'static str {
     use Initiator::*;
     use Destination::*;
-    if request.initiator == Fetch || request.destination == Destination::None {
-        return "connect-src";
-    }
+    // Step 1: If request’s initiator is "prefetch" or "prerender", return default-src.
     if request.initiator == Prefetch || request.initiator == Prerender {
         return "default-src";
     }
+    // Step 2: Switch on request’s destination, and execute the associated steps:
     match request.destination {
         Destination::Manifest => "manifest-src",
         Object | Embed => "object-src",
@@ -1178,6 +1177,7 @@ fn get_the_effective_directive_for_request(request: &Request) -> &'static str {
         ServiceWorker | SharedWorker | Worker => "worker-src",
         Json | WebIdentity => "connect-src",
         Report => "",
+        // Step 3: Return connect-src.
         _ => "connect-src",
     }
 }
