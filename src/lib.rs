@@ -1405,44 +1405,74 @@ fn get_the_effective_directive_for_inline_checks(type_: InlineCheckType) -> &'st
 /// <https://www.w3.org/TR/CSP/#script-pre-request>
 fn script_directives_prerequest_check(request: &Request, directive: &Directive) -> CheckResult {
     use CheckResult::*;
+    // Step 1. If request’s destination is script-like:
     if request_is_script_like(request) {
         let source_list = SourceList(&directive.value[..]);
+        // Step 1.1. If the result of executing § 6.7.2.3 Does nonce match source list? on
+        // request’s cryptographic nonce metadata and this directive’s value is "Matches", return "Allowed".
         if source_list.does_nonce_match_source_list(&request.nonce) == Matches {
             return Allowed;
         }
+        // Step 1.2. If the result of executing § 6.7.2.4 Does integrity metadata match source list? on
+        // request’s integrity metadata and this directive’s value is "Matches", return "Allowed".
         if source_list.does_integrity_metadata_match_source_list(&request.integrity_metadata) == Matches {
             return Allowed;
         }
+        // Step 1.3. If directive’s value contains a source expression that is an
+        // ASCII case-insensitive match for the "'strict-dynamic'" keyword-source:
         if directive.value.iter().any(|ex| ascii_case_insensitive_match(ex, "'strict-dynamic'")) {
+            // Step 1.3.1. If the request’s parser metadata is "parser-inserted", return "Blocked".
             if request.parser_metadata == ParserMetadata::ParserInserted {
                 return Blocked;
-            } else {
-                return Allowed;
             }
+            // Otherwise, return "Allowed".
+            return Allowed;
         }
 
+        // Step 1.4. If the result of executing § 6.7.2.5 Does request match source list? on
+        // request, directive’s value, and policy, is "Does Not Match", return "Blocked".
         if source_list.does_request_match_source_list(request) == DoesNotMatch {
             return Blocked;
         }
     }
+    // Step 2. Return "Allowed".
     Allowed
 }
 
 /// https://www.w3.org/TR/CSP/#script-post-request
 fn script_directives_postrequest_check(request: &Request, response: &Response, directive: &Directive) -> CheckResult {
     use CheckResult::*;
+    // Step 1. If request’s destination is script-like:
     if request_is_script_like(request) {
+        // Step 1.1. Call potentially report hash with response, request, directive and policy.
+        // TODO
         let source_list = SourceList(&directive.value[..]);
+        // Step 1.2. If the result of executing § 6.7.2.3 Does nonce match source list? on
+        // request’s cryptographic nonce metadata and this directive’s value is "Matches", return "Allowed".
         if source_list.does_nonce_match_source_list(&request.nonce) == Matches {
             return Allowed;
         }
-        if directive.value.iter().any(|ex| ascii_case_insensitive_match(ex, "'strict-dynamic'")) && request.parser_metadata != ParserMetadata::ParserInserted {
+        // Step 1.3. If the result of executing § 6.7.2.4 Does integrity metadata match source list? on
+        // request’s integrity metadata and this directive’s value is "Matches", return "Allowed".
+        if source_list.does_integrity_metadata_match_source_list(&request.integrity_metadata) == Matches {
             return Allowed;
         }
+        // Step 1.4. If directive’s value contains "'strict-dynamic'":
+        if directive.value.iter().any(|ex| ascii_case_insensitive_match(ex, "'strict-dynamic'")) {
+            // Step 1.4.1. If the request’s parser metadata is "parser-inserted", return "Blocked".
+            if request.parser_metadata == ParserMetadata::ParserInserted {
+                return Blocked;
+            }
+            // Otherwise, return "Allowed".
+            return Allowed;
+        }
+        // Step 1.5. If the result of executing § 6.7.2.6 Does response to request match source list? on
+        // response, request, directive’s value, and policy, is "Does Not Match", return "Blocked".
         if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
             return Blocked;
         }
     }
+    // Step 2. Return "Allowed".
     Allowed
 }
 
@@ -1821,39 +1851,50 @@ fn does_url_match_expression_in_origin_with_redirect_count(
 }
 
 /// https://www.w3.org/TR/CSP/#match-hosts
-fn host_part_match(a: &str, b: &str) -> MatchResult {
-    debug_assert!(!a.is_empty());
-    if a.is_empty() {
+fn host_part_match(pattern: &str, host: &str) -> MatchResult {
+    debug_assert!(!host.is_empty());
+    // Step 1. If host is not a domain, return "Does Not Match".
+    if host.is_empty() {
         return DoesNotMatch;
     }
-    if a.as_bytes()[0] == b'*' {
-        let remaining = &a[1..];
-        debug_assert_eq!(&remaining[..1], ".");
-        if remaining.len() > b.len() {
-            return DoesNotMatch;
-        }
-        let remaining_b = &b[(b.len()-remaining.len())..];
-        debug_assert_eq!(remaining_b.len(), remaining.len());
-        if ascii_case_insensitive_match(remaining, remaining_b) {
+    if pattern.as_bytes()[0] == b'*' {
+        // Step 2. If pattern is "*", return "Matches".
+        if pattern.len() == 1 {
             return Matches;
-        } else {
+        }
+        // Step 3. If pattern starts with "*.":
+        if pattern.as_bytes()[1] == b'.' {
+            // Step 3.1 Let remaining be pattern with the leading U+002A (*) removed and ASCII lowercased.
+            let remaining_pattern = &pattern[1..];
+            if remaining_pattern.len() > host.len() {
+                return DoesNotMatch;
+            }
+            let remaining_host = &host[(host.len()-remaining_pattern.len())..];
+            debug_assert_eq!(remaining_host.len(), remaining_pattern.len());
+            // Step 3.2. If host to ASCII lowercase ends with remaining, then return "Matches".
+            if ascii_case_insensitive_match(remaining_pattern, remaining_host) {
+                return Matches;
+            }
+            // Step 3.3 Return "Does Not Match".
             return DoesNotMatch;
         }
     }
-    if !ascii_case_insensitive_match(a, b) {
+    // Step 4. If pattern is not an ASCII case-insensitive match for host, return "Does Not Match".
+    if !ascii_case_insensitive_match(pattern, host) {
         return DoesNotMatch;
     }
     static IPV4_ADDRESS_RULE: Lazy<Regex> =
         Lazy::new(|| Regex::new(r#"([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])"#).unwrap());
-    if IPV4_ADDRESS_RULE.is_match(a) && a != "127.0.0.1" {
+    if IPV4_ADDRESS_RULE.is_match(pattern) && pattern != "127.0.0.1" {
         return DoesNotMatch;
     }
     // The spec uses the phrase "if A is an IPv6 address", without giving specific instructions on
     // how to tell if this is the case. In URLs, IPv6 addresses start with `[`, so let's go with that.
     // See https://url.spec.whatwg.org/#host-parsing
-    if a.as_bytes()[0] == b'[' {
+    if pattern.as_bytes()[0] == b'[' {
         return DoesNotMatch;
     }
+    // Step 5. Return "Matches".
     Matches
 }
 
