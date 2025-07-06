@@ -87,7 +87,7 @@ impl Display for Policy {
     fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
         for (i, directive) in self.directive_set.iter().enumerate() {
             if i != 0 {
-                write!(f, ";")?;
+                write!(f, "; ")?;
             }
             <Directive as Display>::fmt(directive, f)?;
         }
