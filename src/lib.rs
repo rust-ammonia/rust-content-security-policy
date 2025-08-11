@@ -42,7 +42,7 @@ pub extern crate percent_encoding;
 pub(crate) mod text_util;
 pub mod sandboxing_directive;
 
-pub use url::{Origin, Url};
+pub use url::{Origin, Position, Url};
 #[cfg(feature = "serde")] use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::borrow::{Borrow, Cow};
@@ -612,7 +612,20 @@ impl CspList {
         (result, violations)
     }
     /// <https://w3c.github.io/webappsec-csp/#should-block-navigation-request>
-    pub fn should_navigation_request_be_blocked(&self, request: &Request, navigation_check_type: NavigationCheckType) -> (CheckResult, Vec<Violation>) {
+    ///
+    /// Here, `url_processor` is a callback to process trusted types (if applicable).
+    /// In case the Trusted Types algorithm returns an Error, return a None. Otherwise
+    /// return a Some with the string as provided by the policy.
+    ///
+    /// If trusted types are not applicable, then the `url_processor` can look like this:
+    /// ```rust
+    /// |s: &str| Some(s.to_owned());
+    /// ```
+    pub fn should_navigation_request_be_blocked<TrustedTypesUrlProcessor>(
+        &self, request: &mut Request, navigation_check_type: NavigationCheckType, url_processor: TrustedTypesUrlProcessor) -> (CheckResult, Vec<Violation>)
+    where
+        TrustedTypesUrlProcessor: Fn(&str) -> Option<String>
+    {
         // Step 1: Let result be "Allowed".
         let mut result = CheckResult::Allowed;
         let mut violations = Vec::new();
@@ -622,7 +635,7 @@ impl CspList {
             for directive in &policy.directive_set {
                 // Step 2.1.1: If directive’s pre-navigation check returns "Allowed"
                 // when executed upon navigation request, type, and policy skip to the next directive.
-                if directive.pre_navigation_check(request, navigation_check_type, policy) == CheckResult::Allowed {
+                if directive.pre_navigation_check(request, navigation_check_type, &url_processor, policy) == CheckResult::Allowed {
                     continue;
                 }
                 // Step 2.1.2: Otherwise, let violation be the result of executing
@@ -1369,7 +1382,11 @@ impl Directive {
         }
     }
     /// <https://w3c.github.io/webappsec-csp/#directive-pre-navigation-check>
-    pub fn pre_navigation_check(&self, request: &Request, type_: NavigationCheckType, _policy: &Policy) -> CheckResult {
+    pub fn pre_navigation_check<TrustedTypesUrlProcessor>(
+        &self, request: &mut Request, type_: NavigationCheckType, url_processor: &TrustedTypesUrlProcessor, _policy: &Policy) -> CheckResult
+    where
+        TrustedTypesUrlProcessor: Fn(&str) -> Option<String>
+    {
         use CheckResult::*;
         match &self.name[..] {
             // <https://w3c.github.io/webappsec-csp/#form-action-pre-navigate>
@@ -1386,6 +1403,36 @@ impl Directive {
                 // Step 3: Return "Allowed".
                 Allowed
             },
+            // <https://www.w3.org/TR/trusted-types/#require-trusted-types-for-pre-navigation-check>
+            "require-trusted-types-for" => {
+                let url = &request.url;
+                // Step 1. If request’s url’s scheme is not "javascript", return "Allowed" and abort further steps.
+                if url.scheme() != "javascript" {
+                    return Allowed;
+                }
+                // Step 2. Let urlString be the result of running the URL serializer on request’s url.
+                //
+                // Already done when creating Request
+                // Step 3. Let encodedScriptSource be the result of removing the leading "javascript:" from urlString.
+                let encoded_script_source = &url[Position::AfterScheme..][1..];
+                // Step 4. Let convertedScriptSource be the result of executing Process value with a default policy algorithm
+                // If that algorithm threw an error or convertedScriptSource is not a TrustedScript object,
+                // return "Blocked" and abort further steps.
+                let Some(converted_script_source) = url_processor(encoded_script_source) else {
+                    return Blocked;
+                };
+                // Step 5. Set urlString to be the result of prepending "javascript:" to stringified convertedScriptSource.
+                let url_string = "javascript:".to_owned() + &converted_script_source;
+                // Step 6. Let newURL be the result of running the URL parser on urlString.
+                // If the parser returns a failure, return "Blocked" and abort further steps.
+                let Ok(new_url) = Url::parse(&url_string) else {
+                    return Blocked;
+                };
+                // Step 7. Set request’s url to newURL.
+                request.url = new_url;
+                // Step 8. Return "Allowed".
+                Allowed
+            }
             _ => Allowed,
         }
     }
