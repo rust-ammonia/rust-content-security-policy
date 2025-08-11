@@ -46,6 +46,7 @@ pub use url::{Origin, Url};
 #[cfg(feature = "serde")] use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::borrow::{Borrow, Cow};
+use std::cmp;
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
 use text_util::{
@@ -87,7 +88,7 @@ impl Display for Policy {
     fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
         for (i, directive) in self.directive_set.iter().enumerate() {
             if i != 0 {
-                write!(f, ";")?;
+                write!(f, "; ")?;
             }
             <Directive as Display>::fmt(directive, f)?;
         }
@@ -219,7 +220,14 @@ impl CspList {
             let violates = policy.does_request_violate_policy(request);
             if let Violates::Directive(directive) = violates {
                 let resource = ViolationResource::Url(request.url.clone());
-                violations.push(Violation { resource, directive });
+                violations.push(Violation {
+                    resource,
+                    directive: Directive {
+                        name: get_the_effective_directive_for_request(request).to_owned(),
+                        value: directive.value.clone(),
+                    },
+                    policy: policy.clone(),
+                });
             }
         }
         violations
@@ -239,7 +247,14 @@ impl CspList {
             if let Violates::Directive(directive) = violates {
                 result = CheckResult::Blocked;
                 let resource = ViolationResource::Url(request.url.clone());
-                violations.push(Violation { resource, directive });
+                violations.push(Violation {
+                    resource,
+                    directive: Directive {
+                        name: get_the_effective_directive_for_request(request).to_owned(),
+                        value: directive.value.clone(),
+                    },
+                    policy: policy.clone(),
+                });
             }
         }
         (result, violations)
@@ -252,28 +267,27 @@ impl CspList {
     */
     pub fn should_response_to_request_be_blocked(&self, request: &Request, response: &Response)
         -> (CheckResult, Vec<Violation>) {
+        // Step 1. Let CSP list be request’s policy container’s CSP list.
+        // step 2. Let result be "Allowed".
         let mut result = CheckResult::Allowed;
         let mut violations = Vec::new();
+        // Step 3. For each policy of CSP list:
         for policy in &self.0 {
+            // Step 3.1. For each directive of policy:
             for directive in &policy.directive_set {
+                // Step 3.1.1. If the result of executing directive’s post-request check is "Blocked", then:
                 if directive.post_request_check(request, response, policy) == CheckResult::Blocked {
+                    // Step 3.1.1.1. Execute §5.5 Report a violation on the result of executing
+                    // §2.4.2 Create a violation object for request, and policy. on request, and policy.
                     violations.push(Violation {
                         resource: ViolationResource::Url(request.url.clone()),
-                        directive: directive.clone(),
+                        directive: Directive {
+                            name: get_the_effective_directive_for_request(request).to_owned(),
+                            value: directive.value.clone(),
+                        },
+                        policy: policy.clone(),
                     });
-                    if policy.disposition == PolicyDisposition::Enforce {
-                        result = CheckResult::Blocked;
-                    }
-                }
-            }
-        }
-        for policy in &response.csp_list.0 {
-            for directive in &policy.directive_set {
-                if directive.response_check(request, response, policy) == CheckResult::Blocked {
-                    violations.push(Violation {
-                        resource: ViolationResource::Url(request.url.clone()),
-                        directive: directive.clone(),
-                    });
+                    // Step 3.1.1.2. If policy’s disposition is "enforce", then set result to "Blocked".
                     if policy.disposition == PolicyDisposition::Enforce {
                         result = CheckResult::Blocked;
                     }
@@ -292,10 +306,19 @@ impl CspList {
                 if directive.inline_check(element, type_, policy, source) == Allowed {
                     continue;
                 }
-                let report_sample = directive.value.iter().any(|t| &t[..] == "'report-sample'");
+                let sample = if directive.value.iter().any(|t| &t[..] == "'report-sample'") {
+                    let max_length = cmp::min(40, source.len());
+                    Some(source[0..max_length].to_owned())
+                } else {
+                    None
+                };
                 let violation = Violation {
-                    resource: ViolationResource::Inline{ report_sample },
-                    directive: directive.clone(),
+                    resource: ViolationResource::Inline{ sample },
+                    directive: Directive {
+                        name: get_the_effective_directive_for_inline_checks(type_).to_owned(),
+                        value: directive.value.clone(),
+                    },
+                    policy: policy.clone(),
                 };
                 violations.push(violation);
                 if policy.disposition == PolicyDisposition::Enforce {
@@ -318,10 +341,10 @@ impl CspList {
             let directive = policy.directive_set.iter().find(|directive| directive.name == "base-uri");
             if let Some(directive) = directive {
                 if SourceList(&directive.value).does_url_match_source_list_in_origin_with_redirect_count(base, &self_origin, 0) == DoesNotMatch {
-                    let report_sample = directive.value.iter().any(|t| &t[..] == "'report-sample'");
                     let violation = Violation {
                         directive: directive.clone(),
-                        resource: ViolationResource::Inline { report_sample },
+                        resource: ViolationResource::Inline { sample: None },
+                        policy: policy.clone(),
                     };
                     violations.push(violation);
                     if policy.disposition == PolicyDisposition::Enforce {
@@ -331,6 +354,155 @@ impl CspList {
             }
         }
         return (Allowed, violations);
+    }
+
+    /**
+    https://w3c.github.io/trusted-types/dist/spec/#should-block-create-policy
+
+    Note that, while this algoritm is defined as operating on a global object, the only property it
+    actually uses is the global's CSP List. So this function operates on that.
+    */
+    pub fn is_trusted_type_policy_creation_allowed(&self, policy_name: String, created_policy_names: Vec<String>) -> (CheckResult, Vec<Violation>) {
+        use CheckResult::*;
+        // Step 1: Let result be "Allowed".
+        let mut result = Allowed;
+        let mut violations = Vec::new();
+        // Step 2: For each policy in global’s CSP list:
+        for policy in &self.0 {
+            // Step 2.1: Let createViolation be false.
+            let mut create_violation = false;
+            // Step 2.2: If policy’s directive set does not contain a directive which name is "trusted-types", skip to the next policy.
+            let directive = policy.directive_set.iter().find(|directive| directive.name == "trusted-types");
+            // Step 2.3: Let directive be the policy’s directive set’s directive which name is "trusted-types"
+            if let Some(directive) = directive {
+                // Step 2.4: If directive’s value only contains a tt-keyword which is a match for a value 'none', set createViolation to true.
+                if directive.value.len() == 1 && directive.value.contains(&"'none'".to_string()) {
+                    create_violation = true;
+                }
+                // Step 2.5: If createdPolicyNames contains policyName and directive’s value does not contain a tt-keyword
+                // which is a match for a value 'allow-duplicates', set createViolation to true.
+                if created_policy_names.contains(&policy_name.clone()) && !directive.value.contains(&"'allow-duplicates'".to_string()) {
+                    create_violation = true;
+                }
+                // Step 2.6: If directive’s value does not contain a tt-policy-name, which value is policyName,
+                // and directive’s value does not contain a tt-wildcard, set createViolation to true.
+                if !directive.value.contains(&policy_name) && !directive.value.contains(&"*".to_string()) {
+                    create_violation = true;
+                }
+                // Step 2.7: If createViolation is false, skip to the next policy.
+                if !create_violation {
+                    continue;
+                }
+                let mut sample = policy_name.clone();
+                // Step 2.10: Set violation’s sample to the substring of policyName, containing its first 40 characters.
+                sample.truncate(40);
+                // Step 2.8: Let violation be the result of executing Create a violation object for global, policy,
+                // and directive on global, policy and "trusted-types"
+                let violation = Violation {
+                    directive: directive.clone(),
+                    // Step 2.9: Set violation’s resource to "trusted-types-policy".
+                    resource: ViolationResource::TrustedTypePolicy {
+                        // Step 2.10: Set violation’s sample to the substring of policyName, containing its first 40 characters.
+                        sample,
+                    },
+                    policy: policy.clone(),
+                };
+                // Step 2.11: Execute Report a violation on violation.
+                violations.push(violation);
+                // Step 2.12: If policy’s disposition is "enforce", then set result to "Blocked".
+                if policy.disposition == PolicyDisposition::Enforce {
+                    result = Blocked
+                }
+            }
+        }
+        return (result, violations);
+    }
+    /**
+    https://w3c.github.io/trusted-types/dist/spec/#abstract-opdef-does-sink-type-require-trusted-types
+
+    Note that, while this algoritm is defined as operating on a global object, the only property it
+    actually uses is the global's CSP List. So this function operates on that.
+    */
+    pub fn does_sink_type_require_trusted_types(&self, sink_group: &str, include_report_only_policies: bool) -> bool {
+        let sink_group = &sink_group.to_owned();
+        // Step 1: For each policy in global’s CSP list:
+        for policy in &self.0 {
+            // Step 1.1: If policy’s directive set does not contain a directive whose name is "require-trusted-types-for", skip to the next policy.
+            let directive = policy.directive_set.iter().find(|directive| directive.name == "require-trusted-types-for");
+            // Step 1.2: Let directive be the policy’s directive set’s directive whose name is "require-trusted-types-for"
+            if let Some(directive) = directive {
+                // Step 1.3: If directive’s value does not contain a trusted-types-sink-group which is a match for sinkGroup, skip to the next policy.
+                if !directive.value.contains(sink_group) {
+                    continue;
+                }
+                // Step 1.4: Let enforced be true if policy’s disposition is "enforce", and false otherwise.
+                let enforced = policy.disposition == PolicyDisposition::Enforce;
+                // Step 1.5: If enforced is true, return true.
+                if enforced {
+                    return true;
+                }
+                // Step 1.6: If includeReportOnlyPolicies is true, return true.
+                if include_report_only_policies {
+                    return true;
+                }
+            }
+        }
+        // Step 2: Return false.
+        false
+    }
+    /**
+    https://w3c.github.io/trusted-types/dist/spec/#should-block-sink-type-mismatch
+
+    Note that, while this algoritm is defined as operating on a global object, the only property it
+    actually uses is the global's CSP List. So this function operates on that.
+    */
+    pub fn should_sink_type_mismatch_violation_be_blocked_by_csp(&self, sink: &str, sink_group: &str, source: &str) -> (CheckResult, Vec<Violation>) {
+        use CheckResult::*;
+        let sink_group = &sink_group.to_owned();
+        // Step 1: Let result be "Allowed".
+        let mut result = Allowed;
+        let mut violations = Vec::new();
+        // Step 2: Let sample be source.
+        let sample = source;
+        // Step 3: If sink is "Function", then:
+        if sink == "Function" {
+            // There currently is no sink of function, so skipping these for now
+            // Step 3.1: If sample starts with "function anonymous", strip that from sample.
+            // Step 3.2: Otherwise if sample starts with "async function anonymous", strip that from sample.
+            // Step 3.3: Otherwise if sample starts with "function* anonymous", strip that from sample.
+            // Step 3.4: Otherwise if sample starts with "async function* anonymous", strip that from sample.
+        }
+        // Step 4: For each policy in global’s CSP list:
+        for policy in &self.0 {
+            // Step 4.1: If policy’s directive set does not contain a directive whose name is "require-trusted-types-for", skip to the next policy.
+            let directive = policy.directive_set.iter().find(|directive| directive.name == "require-trusted-types-for");
+            // Step 4.2: Let directive be the policy’s directive set’s directive whose name is "require-trusted-types-for"
+            let Some(directive) = directive else { continue };
+            // Step 4.3: If directive’s value does not contain a trusted-types-sink-group which is a match for sinkGroup, skip to the next policy.
+            if !directive.value.contains(sink_group) {
+                continue;
+            }
+            // Step 4.6: Let trimmedSample be the substring of sample, containing its first 40 characters.
+            let mut trimmed_sample: String = sample.into();
+            trimmed_sample.truncate(40);
+            // Step 4.4: Let violation be the result of executing Create a violation object for global, policy,
+            // and directive on global, policy and "require-trusted-types-for"
+            violations.push(Violation {
+                // Step 4.5: Set violation’s resource to "trusted-types-sink".
+                resource: ViolationResource::TrustedTypeSink {
+                    // Step 4.7: Set violation’s sample to be the result of concatenating the list « sink, trimmedSample « using "|" as a separator.
+                    sample: sink.to_owned() + "|" + &trimmed_sample,
+                },
+                directive: directive.clone(),
+                policy: policy.clone(),
+            });
+            // Step 4.9: If policy’s disposition is "enforce", then set result to "Blocked".
+            if policy.disposition == PolicyDisposition::Enforce {
+                result = Blocked
+            }
+        }
+        // Step 2: Return false.
+        (result, violations)
     }
     pub fn get_sandboxing_flag_set_for_document(&self) -> Option<SandboxingFlagSet> {
         self.0
@@ -344,40 +516,166 @@ impl CspList {
             .next()
     }
     /// https://www.w3.org/TR/CSP/#can-compile-strings
-    pub fn is_js_evaluation_allowed(&self) -> CheckResult {
+    pub fn is_js_evaluation_allowed(&self, source: &str) -> (CheckResult, Vec<Violation>) {
         let mut result = CheckResult::Allowed;
+        let mut violations = Vec::new();
+        // Step 5: For each policy of global’s CSP list:
         for policy in &self.0 {
-            let source_list = policy.directive_set
+            // Step 5.1: Let source-list be null.
+            let directive = policy.directive_set
                 .iter()
+                // Step 5.2: If policy contains a directive whose name is "script-src",
+                // then set source-list to that directive’s value.
                 .find(|directive| directive.name == "script-src")
-                .or_else(|| policy.directive_set.iter().find(|directive| directive.name == "default-src"))
-                .map(|directive| SourceList(&directive.value));
-            if let Some(source_list) = source_list {
-                result = match source_list.does_a_source_list_allow_js_evaluation(&policy.disposition) {
-                    AllowResult::Allows => CheckResult::Allowed,
-                    AllowResult::DoesNotAllow => CheckResult::Blocked,
-                };
+                // Step 5.2: Otherwise if policy contains a directive whose name is "default-src",
+                // then set source-list to that directive’s value.
+                .or_else(|| policy.directive_set.iter().find(|directive| directive.name == "default-src"));
+            // Step 5.3: If source-list is not null:
+            let Some(directive) = directive else { continue };
+            let source_list = SourceList(&directive.value);
+            if source_list.does_a_source_list_allow_js_evaluation() == AllowResult::Allows {
+                continue;
+            }
+            // Step 5.3.1: Let trustedTypesRequired be the result of executing
+            // Does sink type require trusted types?, with realm, 'script', and false.
+            let trusted_types_required = self.does_sink_type_require_trusted_types("'script'", false);
+            // Step 5.3.2: If trustedTypesRequired is true and source-list contains a source expression
+            // which is an ASCII case-insensitive match for the string "'trusted-types-eval'", then skip the following steps.
+            if trusted_types_required && directive.value.iter().any(|t| ascii_case_insensitive_match(&t[..], "'trusted-types-eval'")) {
+                continue;
+            }
+            // Step 5.3.3: If source-list contains a source expression which is
+            // an ASCII case-insensitive match for the string "'unsafe-eval'", then skip the following steps.
+            if directive.value.iter().any(|t| ascii_case_insensitive_match(&t[..], "'unsafe-eval'")) {
+                continue;
+            }
+            // Step 5.3.6: If source-list contains the expression "'report-sample'",
+            // then set violation’s sample to the substring of sourceString containing its first 40 characters.
+            let sample = if directive.value.iter().any(|t| &t[..] == "'report-sample'") {
+                let max_length = cmp::min(40, source.len());
+                Some(source[0..max_length].to_owned())
+            } else {
+                None
+            };
+            // Step 5.3.4: Let violation be the result of executing Create a violation object for global, policy,
+            // and directive on global, policy and "require-trusted-types-for"
+            violations.push(Violation {
+                // Step 5.3.5: Set violation’s resource to "eval".
+                resource: ViolationResource::Eval { sample },
+                directive: directive.clone(),
+                policy: policy.clone(),
+            });
+            // Step 5.3.8: If policy’s disposition is "enforce", then set result to "Blocked".
+            if policy.disposition == PolicyDisposition::Enforce {
+                result = CheckResult::Blocked
             }
         }
-        result
+        (result, violations)
     }
     /// https://www.w3.org/TR/CSP/#can-compile-wasm-bytes
-    pub fn is_wasm_evaluation_allowed(&self) -> CheckResult {
+    pub fn is_wasm_evaluation_allowed(&self) -> (CheckResult, Vec<Violation>) {
         let mut result = CheckResult::Allowed;
+        let mut violations = Vec::new();
+        // Step 3: For each policy of global’s CSP list:
         for policy in &self.0 {
-            let source_list = policy.directive_set
+            // Step 3.1: Let source-list be null.
+            let directive = policy.directive_set
                 .iter()
+                // Step 3.2: If policy contains a directive whose name is "script-src",
+                // then set source-list to that directive’s value.
                 .find(|directive| directive.name == "script-src")
-                .or_else(|| policy.directive_set.iter().find(|directive| directive.name == "default-src"))
-                .map(|directive| SourceList(&directive.value));
-            if let Some(source_list) = source_list {
-                result = match source_list.does_a_source_list_allow_wasm_evaluation(&policy.disposition) {
-                    AllowResult::Allows => CheckResult::Allowed,
-                    AllowResult::DoesNotAllow => CheckResult::Blocked,
-                };
+                // Step 3.2: Otherwise if policy contains a directive whose name is "default-src",
+                // then set source-list to that directive’s value.
+                .or_else(|| policy.directive_set.iter().find(|directive| directive.name == "default-src"));
+            let Some(directive) = directive else { continue };
+            let source_list = SourceList(&directive.value);
+            // Step 3.3: If source-list is non-null, and does not contain a source expression
+            // which is an ASCII case-insensitive match for the string "'unsafe-eval'",
+            // and does not contain a source expression which is an ASCII case-insensitive
+            // match for the string "'wasm-unsafe-eval'", then:
+            if source_list.does_a_source_list_allow_wasm_evaluation() == AllowResult::Allows {
+                continue;
+            }
+            // Step 3.3.1: Let violation be the result of executing § 2.4.1 Create a violation
+            // object for global, policy, and directive on global, policy, and "script-src".
+            violations.push(Violation {
+                // Step 5.3.5: Set violation’s resource to "wasm-eval".
+                resource: ViolationResource::WasmEval,
+                directive: directive.clone(),
+                policy: policy.clone(),
+            });
+            // Step 3.3.4: If policy’s disposition is "enforce", then set result to "Blocked".
+            if policy.disposition == PolicyDisposition::Enforce {
+                result = CheckResult::Blocked
             }
         }
-        result
+        (result, violations)
+    }
+    /// <https://w3c.github.io/webappsec-csp/#should-block-navigation-request>
+    pub fn should_navigation_request_be_blocked(&self, request: &Request, navigation_check_type: NavigationCheckType) -> (CheckResult, Vec<Violation>) {
+        // Step 1: Let result be "Allowed".
+        let mut result = CheckResult::Allowed;
+        let mut violations = Vec::new();
+        // Step 2: For each policy of navigation request’s policy container’s CSP list:
+        for policy in &self.0 {
+            // Step 2.1: For each directive of policy:
+            for directive in &policy.directive_set {
+                // Step 2.1.1: If directive’s pre-navigation check returns "Allowed"
+                // when executed upon navigation request, type, and policy skip to the next directive.
+                if directive.pre_navigation_check(request, navigation_check_type, policy) == CheckResult::Allowed {
+                    continue;
+                }
+                // Step 2.1.2: Otherwise, let violation be the result of executing
+                // § 2.4.1 Create a violation object for global, policy, and directive
+                // on navigation request’s client’s global object, policy, and directive’s name.
+                violations.push(Violation {
+                    // Step 2.1.3: Set violation’s resource to navigation request’s URL.
+                    resource: ViolationResource::Url(request.url.clone()),
+                    directive: Directive {
+                        name: get_the_effective_directive_for_request(request).to_owned(),
+                        value: directive.value.clone(),
+                    },
+                    policy: policy.clone(),
+                });
+                // Step 2.1.5: If policy’s disposition is "enforce", then set result to "Blocked".
+                if policy.disposition == PolicyDisposition::Enforce {
+                    result = CheckResult::Blocked;
+                }
+            }
+        }
+        // Step 3: If result is "Allowed", and if navigation request’s current URL’s scheme is javascript:
+        if result == CheckResult::Allowed && request.url.scheme() == "javascript" {
+            // Step 3.1: For each policy of navigation request’s policy container’s CSP list:
+            for policy in &self.0 {
+                // Step 3.1.1: For each directive of policy:
+                for directive in &policy.directive_set {
+                    // Step 3.1.1.2: If directive’s inline check returns "Allowed" when executed upon null,
+                    // "navigation" and navigation request’s current URL, skip to the next directive.
+                    if directive.inline_check(&Element { nonce: None }, InlineCheckType::Navigation, policy, request.url.as_str()) == CheckResult::Allowed {
+                        continue;
+                    }
+                    // Step 3.1.1.3: Otherwise, let violation be the result of executing
+                    // § 2.4.1 Create a violation object for global, policy, and directive
+                    // on navigation request’s client’s global object, policy, and directive’s name.
+                    violations.push(Violation {
+                        // Step 3.1.1.4: Set violation’s resource to navigation request’s URL.
+                        resource: ViolationResource::Inline { sample: None },
+                        directive: Directive {
+                            // Step 3.1.1.1: Let directive-name be the result of executing
+                            // § 6.8.2 Get the effective directive for inline checks on type.
+                            name: get_the_effective_directive_for_inline_checks(InlineCheckType::Navigation).to_owned(),
+                            value: directive.value.clone(),
+                        },
+                        policy: policy.clone(),
+                    });
+                    // Step 3.1.1.6: If policy’s disposition is "enforce", then set result to "Blocked".
+                    if policy.disposition == PolicyDisposition::Enforce {
+                        result = CheckResult::Blocked;
+                    }
+                }
+            }
+        }
+        (result, violations)
     }
 }
 
@@ -403,6 +701,17 @@ pub enum InlineCheckType {
     Style,
     StyleAttribute,
     Navigation,
+}
+
+/**
+The valid values for type are "form-submission" and "other".
+
+https://w3c.github.io/webappsec-csp/#directive-pre-navigation-check
+*/
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NavigationCheckType {
+    FormSubmission,
+    Other,
 }
 
 /**
@@ -549,7 +858,6 @@ https://fetch.spec.whatwg.org/#concept-response
 */
 #[derive(Clone, Debug)]
 pub struct Response {
-    pub csp_list: CspList,
     pub url: Url,
     pub redirect_count: u32,
 }
@@ -560,9 +868,11 @@ violation information
 https://www.w3.org/TR/CSP/#violation
 */
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Violation {
     pub resource: ViolationResource,
     pub directive: Directive,
+    pub policy: Policy,
 }
 
 /**
@@ -571,11 +881,22 @@ violation information
 https://www.w3.org/TR/CSP/#violation
 */
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum ViolationResource {
     Url(Url),
     Inline {
-        report_sample: bool,
+        sample: Option<String>,
     },
+    TrustedTypePolicy {
+        sample: String,
+    },
+    TrustedTypeSink {
+        sample: String,
+    },
+    Eval {
+        sample: Option<String>,
+    },
+    WasmEval,
 }
 
 /**
@@ -619,17 +940,19 @@ pub enum PolicySource {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Directive {
-    name: String,
-    value: Vec<String>,
+    pub name: String,
+    pub value: Vec<String>,
 }
 
 impl Display for Directive {
     fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
         <str as Display>::fmt(&self.name[..], f)?;
         write!(f, " ")?;
-        for token in &self.value {
+        for (i, token) in self.value.iter().enumerate() {
+            if i != 0 {
+                write!(f, " ")?;
+            }
             <str as Display>::fmt(&token[..], f)?;
-            write!(f, " ")?;
         }
         Ok(())
     }
@@ -948,31 +1271,6 @@ impl Directive {
             _ => Allowed,
         }
     }
-    /// https://www.w3.org/TR/CSP/#directive-response-check
-    pub fn response_check(&self, request: &Request, _response: &Response, policy: &Policy) -> CheckResult {
-        use CheckResult::*;
-        use Destination::*;
-        use PolicyDisposition::*;
-        match &self.name[..] {
-            "sandbox" => {
-                if policy.disposition != Enforce {
-                    return Allowed;
-                }
-                match request.destination {
-                    ServiceWorker | SharedWorker | Worker => {
-                        let sandboxing = parse_a_sandboxing_directive(&self.value[..]);
-                        if sandboxing.contains(SandboxingFlagSet::SANDBOXED_SCRIPTS_BROWSING_CONTEXT_FLAG) || sandboxing.contains(SandboxingFlagSet::SANDBOXED_ORIGIN_BROWSING_CONTEXT_FLAG) {
-                            Blocked
-                        } else {
-                            Allowed
-                        }
-                    },
-                    _ => Allowed,
-                }
-            },
-            _ => Allowed,
-        }
-    }
     /// https://www.w3.org/TR/CSP/#directive-inline-check
     pub fn inline_check(&self, element: &Element, type_: InlineCheckType, policy: &Policy, source: &str) -> CheckResult {
         use CheckResult::*;
@@ -1070,6 +1368,27 @@ impl Directive {
             _ => None,
         }
     }
+    /// <https://w3c.github.io/webappsec-csp/#directive-pre-navigation-check>
+    pub fn pre_navigation_check(&self, request: &Request, type_: NavigationCheckType, _policy: &Policy) -> CheckResult {
+        use CheckResult::*;
+        match &self.name[..] {
+            // <https://w3c.github.io/webappsec-csp/#form-action-pre-navigate>
+            "form-action" => {
+                // Step 2: If navigation type is "form-submission":
+                if type_ == NavigationCheckType::FormSubmission {
+                    let source_list = SourceList(&self.value);
+                    // Step 2.1: If the result of executing § 6.7.2.5 Does request match source list? on request,
+                    // this directive’s value, and a policy, is "Does Not Match", return "Blocked".
+                    if source_list.does_request_match_source_list(request) == DoesNotMatch {
+                        return Blocked;
+                    }
+                }
+                // Step 3: Return "Allowed".
+                Allowed
+            },
+            _ => Allowed,
+        }
+    }
 }
 
 /// https://www.w3.org/TR/CSP/#effective-directive-for-inline-check
@@ -1086,66 +1405,74 @@ fn get_the_effective_directive_for_inline_checks(type_: InlineCheckType) -> &'st
 /// <https://www.w3.org/TR/CSP/#script-pre-request>
 fn script_directives_prerequest_check(request: &Request, directive: &Directive) -> CheckResult {
     use CheckResult::*;
+    // Step 1. If request’s destination is script-like:
     if request_is_script_like(request) {
         let source_list = SourceList(&directive.value[..]);
+        // Step 1.1. If the result of executing § 6.7.2.3 Does nonce match source list? on
+        // request’s cryptographic nonce metadata and this directive’s value is "Matches", return "Allowed".
         if source_list.does_nonce_match_source_list(&request.nonce) == Matches {
             return Allowed;
         }
-        let integrity_expressions: Vec<HashFunction> = directive.value.iter()
-            .filter_map(|expression| {
-                if let Some(captures) = HASH_SOURCE_GRAMMAR.captures(expression) {
-                    if let (Some(algorithm), Some(value)) = (captures.name("algorithm").and_then(|a| HashAlgorithm::from_name(a.as_str())), captures.name("value")) {
-                        return Some(HashFunction{ algorithm, value: String::from(value.as_str()) });
-                    }
-                }
-                None
-            })
-            .collect();
-        if !integrity_expressions.is_empty() {
-            let integrity_sources = parse_subresource_integrity_metadata(&request.integrity_metadata);
-            if let SubresourceIntegrityMetadata::IntegritySources(integrity_sources) = integrity_sources {
-                let mut bypass_due_to_integrity_match = true;
-                for source in &integrity_sources {
-                    if integrity_expressions.iter().any(|ex| ex == source) {
-                        bypass_due_to_integrity_match = false;
-                    }
-                }
-                if bypass_due_to_integrity_match {
-                    return Allowed;
-                }
-            }
+        // Step 1.2. If the result of executing § 6.7.2.4 Does integrity metadata match source list? on
+        // request’s integrity metadata and this directive’s value is "Matches", return "Allowed".
+        if source_list.does_integrity_metadata_match_source_list(&request.integrity_metadata) == Matches {
+            return Allowed;
         }
-
+        // Step 1.3. If directive’s value contains a source expression that is an
+        // ASCII case-insensitive match for the "'strict-dynamic'" keyword-source:
         if directive.value.iter().any(|ex| ascii_case_insensitive_match(ex, "'strict-dynamic'")) {
+            // Step 1.3.1. If the request’s parser metadata is "parser-inserted", return "Blocked".
             if request.parser_metadata == ParserMetadata::ParserInserted {
                 return Blocked;
-            } else {
-                return Allowed;
             }
+            // Otherwise, return "Allowed".
+            return Allowed;
         }
 
+        // Step 1.4. If the result of executing § 6.7.2.5 Does request match source list? on
+        // request, directive’s value, and policy, is "Does Not Match", return "Blocked".
         if source_list.does_request_match_source_list(request) == DoesNotMatch {
             return Blocked;
         }
     }
+    // Step 2. Return "Allowed".
     Allowed
 }
 
 /// https://www.w3.org/TR/CSP/#script-post-request
 fn script_directives_postrequest_check(request: &Request, response: &Response, directive: &Directive) -> CheckResult {
     use CheckResult::*;
+    // Step 1. If request’s destination is script-like:
     if request_is_script_like(request) {
+        // Step 1.1. Call potentially report hash with response, request, directive and policy.
+        // TODO
         let source_list = SourceList(&directive.value[..]);
+        // Step 1.2. If the result of executing § 6.7.2.3 Does nonce match source list? on
+        // request’s cryptographic nonce metadata and this directive’s value is "Matches", return "Allowed".
         if source_list.does_nonce_match_source_list(&request.nonce) == Matches {
             return Allowed;
         }
-        if directive.value.iter().any(|ex| ascii_case_insensitive_match(ex, "'strict-dynamic'")) && request.parser_metadata != ParserMetadata::ParserInserted {
+        // Step 1.3. If the result of executing § 6.7.2.4 Does integrity metadata match source list? on
+        // request’s integrity metadata and this directive’s value is "Matches", return "Allowed".
+        if source_list.does_integrity_metadata_match_source_list(&request.integrity_metadata) == Matches {
             return Allowed;
         }
+        // Step 1.4. If directive’s value contains "'strict-dynamic'":
+        if directive.value.iter().any(|ex| ascii_case_insensitive_match(ex, "'strict-dynamic'")) {
+            // Step 1.4.1. If the request’s parser metadata is "parser-inserted", return "Blocked".
+            if request.parser_metadata == ParserMetadata::ParserInserted {
+                return Blocked;
+            }
+            // Otherwise, return "Allowed".
+            return Allowed;
+        }
+        // Step 1.5. If the result of executing § 6.7.2.6 Does response to request match source list? on
+        // response, request, directive’s value, and policy, is "Does Not Match", return "Blocked".
         if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
             return Blocked;
         }
     }
+    // Step 2. Return "Allowed".
     Allowed
 }
 
@@ -1191,12 +1518,11 @@ fn get_fetch_directive_fallback_list(directive_name: &str) -> &'static [&'static
 fn get_the_effective_directive_for_request(request: &Request) -> &'static str {
     use Initiator::*;
     use Destination::*;
-    if request.initiator == Fetch || request.destination == Destination::None {
-        return "connect-src";
-    }
+    // Step 1: If request’s initiator is "prefetch" or "prerender", return default-src.
     if request.initiator == Prefetch || request.initiator == Prerender {
         return "default-src";
     }
+    // Step 2: Switch on request’s destination, and execute the associated steps:
     match request.destination {
         Destination::Manifest => "manifest-src",
         Object | Embed => "object-src",
@@ -1209,6 +1535,7 @@ fn get_the_effective_directive_for_request(request: &Request) -> &'static str {
         ServiceWorker | SharedWorker | Worker => "worker-src",
         Json | WebIdentity => "connect-src",
         Report => "",
+        // Step 3: Return connect-src.
         _ => "connect-src",
     }
 }
@@ -1239,7 +1566,7 @@ static HOST_SOURCE_GRAMMAR: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"^((?P<scheme>[a-zA-Z][a-zA-Z0-9\+\-\.]*)://)?(?P<host>\*|(\*\.)?[a-zA-Z0-9\-]+(\.[a-zA-Z0-9\-]+)*)(?P<port>:(\*|[0-9]+))?(?P<path>/([:@%!\$&'\(\)\*\+,;=0-9a-zA-Z\-\._~]+)?(/[:@%!\$&'\(\)\*\+,;=0-9a-zA-Z\-\._~]*)*)?$"#).unwrap());
 /// https://www.w3.org/TR/CSP/#grammardef-hash-source
 static HASH_SOURCE_GRAMMAR: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"^'(?P<algorithm>sha256|sha384|sha512)-(?P<value>[a-zA-Z0-9\+/\-_]+=*)'$"#).unwrap());
+    Lazy::new(|| Regex::new(r#"^'(?P<algorithm>[sS][hH][aA](256|384|512))-(?P<value>[a-zA-Z0-9\+/\-_]+=*)'$"#).unwrap());
 
 /// https://www.w3.org/TR/CSP/#framework-directive-source-list
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1259,6 +1586,49 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
             }
         }
         DoesNotMatch
+    }
+    /// https://www.w3.org/TR/CSP/#match-integrity-metadata-to-source-list
+    fn does_integrity_metadata_match_source_list(&self, integrity_metadata: &str) -> MatchResult {
+        // Step 2: Let integrity expressions be the set of source expressions in source list that match the hash-source grammar.
+        let integrity_expressions: Vec<HashFunction> = self.0.clone().into_iter()
+            .filter_map(|expression| {
+                if let Some(captures) = HASH_SOURCE_GRAMMAR.captures(expression.borrow()) {
+                    if let (Some(algorithm), Some(value)) = (captures.name("algorithm").and_then(|a| HashAlgorithm::from_name(a.as_str())), captures.name("value")) {
+                        return Some(HashFunction{ algorithm, value: String::from(value.as_str()) });
+                    }
+                }
+                None
+            })
+            .collect();
+        // Step 3: If integrity expressions is empty, return "Does Not Match".
+        if integrity_expressions.is_empty() {
+            return DoesNotMatch;
+        }
+        // Step 4: Let integrity sources be the result of executing the algorithm defined in SRI § 3.3.3 Parse metadata. on integrity metadata.
+        let integrity_sources = parse_subresource_integrity_metadata(integrity_metadata);
+        match integrity_sources {
+            // Step 5: If integrity sources is "no metadata" or an empty set, return "Does Not Match".
+            SubresourceIntegrityMetadata::NoMetadata => DoesNotMatch,
+            SubresourceIntegrityMetadata::IntegritySources(integrity_sources) => {
+                if integrity_sources.is_empty() {
+                    return DoesNotMatch;
+                }
+                // Step 6: For each source of integrity sources:
+                for source in &integrity_sources {
+                    // Step 6.1: If integrity expressions does not contain a source expression whose hash-algorithm
+                    // is an ASCII case-insensitive match for source’s hash-algorithm,
+                    // and whose base64-value is identical to source’s base64-value, return "Does Not Match".
+                    //
+                    // Note that the case-insensitivy is already handled in HashAlgorithm::from_name and therefore
+                    // we can do a simple equals check here for both algorithm and value.
+                    if !integrity_expressions.iter().any(|ex| ex == source) {
+                        return DoesNotMatch;
+                    }
+                }
+                // Step 7: Return "Matches".
+                Matches
+            }
+        }
     }
     /// https://www.w3.org/TR/CSP/#match-request-to-source-list
     fn does_request_match_source_list(&self, request: &Request) -> MatchResult {
@@ -1367,9 +1737,10 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
         )
     }
     /// https://www.w3.org/TR/CSP/#can-compile-strings
-    fn does_a_source_list_allow_js_evaluation(&self, disposition: &PolicyDisposition) -> AllowResult {
-        if matches!(disposition, PolicyDisposition::Report) { return AllowResult::Allows };
+    fn does_a_source_list_allow_js_evaluation(&self) -> AllowResult {
         for expression in self.0.clone().into_iter().map(Borrow::borrow) {
+            // Step 5.3: If source-list contains a source expression which is an ASCII case-insensitive match
+            // for the string "'unsafe-eval'", then skip the following steps.
             if ascii_case_insensitive_match(expression, "'unsafe-eval'") {
                 return AllowResult::Allows;
             }
@@ -1377,8 +1748,7 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
         AllowResult::DoesNotAllow
     }
     /// https://www.w3.org/TR/CSP/#can-compile-wasm-bytes
-    fn does_a_source_list_allow_wasm_evaluation(&self, disposition: &PolicyDisposition) -> AllowResult {
-        if matches!(disposition, PolicyDisposition::Report) { return AllowResult::Allows };
+    fn does_a_source_list_allow_wasm_evaluation(&self) -> AllowResult {
         for expression in self.0.clone().into_iter().map(Borrow::borrow) {
             if ascii_case_insensitive_match(expression, "'unsafe-eval'") ||
                 ascii_case_insensitive_match(expression, "'wasm-unsafe-eval'") {
@@ -1481,39 +1851,50 @@ fn does_url_match_expression_in_origin_with_redirect_count(
 }
 
 /// https://www.w3.org/TR/CSP/#match-hosts
-fn host_part_match(a: &str, b: &str) -> MatchResult {
-    debug_assert!(!a.is_empty());
-    if a.is_empty() {
+fn host_part_match(pattern: &str, host: &str) -> MatchResult {
+    debug_assert!(!host.is_empty());
+    // Step 1. If host is not a domain, return "Does Not Match".
+    if host.is_empty() {
         return DoesNotMatch;
     }
-    if a.as_bytes()[0] == b'*' {
-        let remaining = &a[1..];
-        debug_assert_eq!(&remaining[..1], ".");
-        if remaining.len() > b.len() {
-            return DoesNotMatch;
-        }
-        let remaining_b = &b[(b.len()-remaining.len())..];
-        debug_assert_eq!(remaining_b.len(), remaining.len());
-        if ascii_case_insensitive_match(remaining, remaining_b) {
+    if pattern.as_bytes()[0] == b'*' {
+        // Step 2. If pattern is "*", return "Matches".
+        if pattern.len() == 1 {
             return Matches;
-        } else {
+        }
+        // Step 3. If pattern starts with "*.":
+        if pattern.as_bytes()[1] == b'.' {
+            // Step 3.1 Let remaining be pattern with the leading U+002A (*) removed and ASCII lowercased.
+            let remaining_pattern = &pattern[1..];
+            if remaining_pattern.len() > host.len() {
+                return DoesNotMatch;
+            }
+            let remaining_host = &host[(host.len()-remaining_pattern.len())..];
+            debug_assert_eq!(remaining_host.len(), remaining_pattern.len());
+            // Step 3.2. If host to ASCII lowercase ends with remaining, then return "Matches".
+            if ascii_case_insensitive_match(remaining_pattern, remaining_host) {
+                return Matches;
+            }
+            // Step 3.3 Return "Does Not Match".
             return DoesNotMatch;
         }
     }
-    if !ascii_case_insensitive_match(a, b) {
+    // Step 4. If pattern is not an ASCII case-insensitive match for host, return "Does Not Match".
+    if !ascii_case_insensitive_match(pattern, host) {
         return DoesNotMatch;
     }
     static IPV4_ADDRESS_RULE: Lazy<Regex> =
         Lazy::new(|| Regex::new(r#"([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])"#).unwrap());
-    if IPV4_ADDRESS_RULE.is_match(a) && a != "127.0.0.1" {
+    if IPV4_ADDRESS_RULE.is_match(pattern) && pattern != "127.0.0.1" {
         return DoesNotMatch;
     }
     // The spec uses the phrase "if A is an IPv6 address", without giving specific instructions on
     // how to tell if this is the case. In URLs, IPv6 addresses start with `[`, so let's go with that.
     // See https://url.spec.whatwg.org/#host-parsing
-    if a.as_bytes()[0] == b'[' {
+    if pattern.as_bytes()[0] == b'[' {
         return DoesNotMatch;
     }
+    // Step 5. Return "Matches".
     Matches
 }
 
@@ -1638,9 +2019,9 @@ impl HashAlgorithm {
     pub fn from_name(name: &str) -> Option<HashAlgorithm> {
         use HashAlgorithm::*;
         match name {
-            "sha256" | "Sha256" | "sHa256" | "shA256" | "SHa256" | "sHA256" | "SHA256" => Some(Sha256),
-            "sha384" | "Sha384" | "sHa384" | "shA384" | "SHa384" | "sHA384" | "SHA384" => Some(Sha384),
-            "sha512" | "Sha512" | "sHa512" | "shA512" | "SHa512" | "sHA512" | "SHA512" => Some(Sha512),
+            "sha256" | "Sha256" | "sHa256" | "shA256" | "SHa256" | "ShA256" | "sHA256" | "SHA256" => Some(Sha256),
+            "sha384" | "Sha384" | "sHa384" | "shA384" | "SHa384" | "ShA384" | "sHA384" | "SHA384" => Some(Sha384),
+            "sha512" | "Sha512" | "sHa512" | "shA512" | "SHa512" | "ShA512" | "sHA512" | "SHA512" => Some(Sha512),
             _ => None,
         }
     }
@@ -1674,7 +2055,7 @@ pub enum SubresourceIntegrityMetadata {
 /// https://www.w3.org/TR/SRI/#the-integrity-attribute
 /// This corresponds to the "hash-expression" grammar.
 static SUBRESOURCE_METADATA_GRAMMAR: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"(?P<algorithm>sha256|sha384|sha512)-(?P<value>[a-zA-Z0-9\+/\-_]+=*)"#).unwrap());
+    Lazy::new(|| Regex::new(r#"(?P<algorithm>[sS][hH][aA](256|384|512))-(?P<value>[a-zA-Z0-9\+/\-_]+=*)"#).unwrap());
 
 /// https://www.w3.org/TR/SRI/#parse-metadata
 pub fn parse_subresource_integrity_metadata(string: &str) -> SubresourceIntegrityMetadata {
@@ -1794,5 +2175,120 @@ mod test {
         let violation_result = p.does_request_violate_policy(&request);
 
         assert!(violation_result == Violates::DoesNotViolate);
+    }
+
+    #[test]
+    pub fn trusted_type_policy_is_valid() {
+        let p = Policy::parse("trusted-types 'none'", PolicySource::Meta, PolicyDisposition::Enforce);
+        assert!(p.is_valid());
+        assert_eq!(p.directive_set[0].value, vec!["'none'".to_owned()]);
+    }
+
+    #[test]
+    pub fn csp_list_is_valid() {
+        let csp_list = CspList::parse("default-src 'none'; child-src 'self', trusted-types 'none'", PolicySource::Meta, PolicyDisposition::Enforce);
+        assert!(csp_list.is_valid());
+        assert_eq!(csp_list.0[1].directive_set[0].value, vec!["'none'".to_owned()]);
+    }
+
+    #[test]
+    pub fn no_trusted_types_specified_allows_all_policies() {
+        let csp_list = CspList::parse("default-src 'none'; child-src 'self'", PolicySource::Meta, PolicyDisposition::Enforce);
+        assert!(csp_list.is_valid());
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy".to_owned(), vec![]);
+        assert_eq!(check_result, CheckResult::Allowed);
+        assert!(violations.is_empty());
+    }
+
+    #[test]
+    pub fn none_does_not_allow_for_any_policy() {
+        let csp_list = CspList::parse("trusted-types 'none'", PolicySource::Meta, PolicyDisposition::Enforce);
+        assert!(csp_list.is_valid());
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("some-policy".to_owned(), vec![]);
+        assert!(check_result == CheckResult::Blocked);
+        assert_eq!(violations.len(), 1);
+    }
+
+    #[test]
+    pub fn extra_none_allows_all_policies() {
+        let csp_list = CspList::parse("trusted-types some-policy 'none'", PolicySource::Meta, PolicyDisposition::Enforce);
+        assert!(csp_list.is_valid());
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("some-policy".to_owned(), vec![]);
+        assert!(check_result == CheckResult::Allowed);
+        assert!(violations.is_empty());
+    }
+
+    #[test]
+    pub fn explicit_policy_named_is_allowed() {
+        let csp_list = CspList::parse("trusted-types MyPolicy", PolicySource::Meta, PolicyDisposition::Enforce);
+        assert!(csp_list.is_valid());
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy".to_owned(), vec![]);
+        assert_eq!(check_result, CheckResult::Allowed);
+        assert!(violations.is_empty());
+    }
+
+    #[test]
+    pub fn other_policy_name_is_blocked() {
+        let csp_list = CspList::parse("trusted-types MyPolicy", PolicySource::Meta, PolicyDisposition::Enforce);
+        assert!(csp_list.is_valid());
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyOtherPolicy".to_owned(), vec![]);
+        assert!(check_result == CheckResult::Blocked);
+        assert_eq!(violations.len(), 1);
+    }
+
+    #[test]
+    pub fn already_created_policy_is_blocked() {
+        let csp_list = CspList::parse("trusted-types MyPolicy", PolicySource::Meta, PolicyDisposition::Enforce);
+        assert!(csp_list.is_valid());
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy".to_owned(), vec!["MyPolicy".to_owned()]);
+        assert!(check_result == CheckResult::Blocked);
+        assert_eq!(violations.len(), 1);
+    }
+
+    #[test]
+    pub fn already_created_policy_is_allowed_with_allow_duplicates() {
+        let csp_list = CspList::parse("trusted-types MyPolicy 'allow-duplicates'", PolicySource::Meta, PolicyDisposition::Enforce);
+        assert!(csp_list.is_valid());
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy".to_owned(), vec!["MyPolicy".to_owned()]);
+        assert!(check_result == CheckResult::Allowed);
+        assert!(violations.is_empty());
+    }
+
+    #[test]
+    pub fn only_report_policy_issues_for_disposition_report() {
+        let csp_list = CspList::parse("trusted-types MyPolicy", PolicySource::Meta, PolicyDisposition::Report);
+        assert!(csp_list.is_valid());
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy".to_owned(), vec!["MyPolicy".to_owned()]);
+        assert!(check_result == CheckResult::Allowed);
+        assert_eq!(violations.len(), 1);
+    }
+
+    #[test]
+    pub fn wildcard_allows_all_policies() {
+        let csp_list = CspList::parse("trusted-types *", PolicySource::Meta, PolicyDisposition::Report);
+        assert!(csp_list.is_valid());
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy".to_owned(), vec![]);
+        assert!(check_result == CheckResult::Allowed);
+        assert!(violations.is_empty());
+    }
+
+    #[test]
+    pub fn violation_has_correct_directive() {
+        let csp_list = CspList::parse("trusted-types MyPolicy", PolicySource::Meta, PolicyDisposition::Enforce);
+        assert!(csp_list.is_valid());
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyOtherPolicy".to_owned(), vec![]);
+        assert!(check_result == CheckResult::Blocked);
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].directive, csp_list.0[0].directive_set[0]);
+    }
+
+    #[test]
+    pub fn long_policy_name_is_truncated() {
+        let csp_list = CspList::parse("trusted-types MyPolicy", PolicySource::Meta, PolicyDisposition::Enforce);
+        assert!(csp_list.is_valid());
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("SuperLongPolicyNameThatExceeds40Characters".to_owned(), vec![]);
+        assert!(check_result == CheckResult::Blocked);
+        assert_eq!(violations.len(), 1);
+        assert!(matches!(&violations[0].resource, ViolationResource::TrustedTypePolicy { sample } if sample == "SuperLongPolicyNameThatExceeds40Characte"));
     }
 }

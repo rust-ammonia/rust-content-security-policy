@@ -30,4 +30,4 @@ base64 = "0.22"
 once_cell = "1.9"
 
 [features]
-serde = ["dep:serde", "bitflags/serde"]
+serde = ["dep:serde", "bitflags/serde", "url/serde"]
