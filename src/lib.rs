@@ -508,15 +508,23 @@ impl CspList {
         // Step 2: Return false.
         (result, violations)
     }
+    /// <https://html.spec.whatwg.org/multipage/#csp-derived-sandboxing-flags>
     pub fn get_sandboxing_flag_set_for_document(&self) -> Option<SandboxingFlagSet> {
+        // Step 1. Let directives be an empty ordered set.
+        // Step 2. For each policy in cspList:
         self.0
             .iter()
             .flat_map(|policy| {
                 policy.directive_set
                     .iter()
+                    // Step 4. Let directive be directives[directives's size − 1].
+                    .rev()
+                    // Step 2.2. If policy's directive set contains a directive whose name is "sandbox",
+                    // then append that directive to directives.
                     .find(|directive| directive.name == "sandbox")
                     .and_then(|directive| directive.get_sandboxing_flag_set_for_document(policy))
             })
+            // Step 3. If directives is empty, then return an empty sandboxing flag set.
             .next()
     }
     /// https://www.w3.org/TR/CSP/#can-compile-strings
@@ -1371,18 +1379,15 @@ impl Directive {
             _ => Allowed
         }
     }
-    /// https://www.w3.org/TR/CSP/#sandbox-init
+    /// <https://html.spec.whatwg.org/multipage/#csp-derived-sandboxing-flags>
     pub fn get_sandboxing_flag_set_for_document(&self, policy: &Policy) -> Option<SandboxingFlagSet> {
-        use PolicyDisposition::*;
-        match &self.name[..] {
-            "sandbox" => {
-                if policy.disposition != Enforce {
-                    None
-                } else {
-                    Some(parse_a_sandboxing_directive(&self.value[..]))
-                }
-            },
-            _ => None,
+        debug_assert!(&self.name[..] == "sandbox");
+        // Step 2.1. If policy's disposition is not "enforce", then continue.
+        if policy.disposition != PolicyDisposition::Enforce {
+            None
+        } else {
+            // Step 5. Return the result of parsing the sandboxing directive directive.
+            Some(parse_a_sandboxing_directive(&self.value[..]))
         }
     }
     /// <https://w3c.github.io/webappsec-csp/#directive-pre-navigation-check>
