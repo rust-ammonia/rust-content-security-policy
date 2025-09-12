@@ -467,14 +467,22 @@ impl CspList {
         let mut result = Allowed;
         let mut violations = Vec::new();
         // Step 2: Let sample be source.
-        let sample = source;
+        let mut sample = source;
         // Step 3: If sink is "Function", then:
         if sink == "Function" {
-            // There currently is no sink of function, so skipping these for now
             // Step 3.1: If sample starts with "function anonymous", strip that from sample.
-            // Step 3.2: Otherwise if sample starts with "async function anonymous", strip that from sample.
-            // Step 3.3: Otherwise if sample starts with "function* anonymous", strip that from sample.
-            // Step 3.4: Otherwise if sample starts with "async function* anonymous", strip that from sample.
+            if sample.starts_with("function anonymous") {
+                sample = &sample[18..];
+                // Step 3.2: Otherwise if sample starts with "async function anonymous", strip that from sample.
+            } else if sample.starts_with("async function anonymous") {
+                sample = &sample[24..];
+                // Step 3.3: Otherwise if sample starts with "function* anonymous", strip that from sample.
+            } else if sample.starts_with("function* anonymous") {
+                sample = &sample[19..];
+                // Step 3.4: Otherwise if sample starts with "async function* anonymous", strip that from sample.
+            } else if sample.starts_with("async function* anonymous") {
+                sample = &sample[25..];
+            }
         }
         // Step 4: For each policy in global’s CSP list:
         for policy in &self.0 {
