@@ -42,7 +42,7 @@ pub extern crate percent_encoding;
 pub(crate) mod text_util;
 pub mod sandboxing_directive;
 
-pub use url::{Origin, Url};
+pub use url::{Origin, Position, Url};
 #[cfg(feature = "serde")] use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::borrow::{Borrow, Cow};
@@ -182,6 +182,10 @@ impl Display for CspList {
         Ok(())
     }
 }
+
+/// https://www.w3.org/TR/trusted-types/#trusted-types-csp-directive
+static TRUSTED_POLICY_SOURCE_GRAMMAR: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"^[0-9a-zA-Z\-\#=_\/@\.%]+$"#).unwrap());
 
 impl CspList {
     pub fn is_valid(&self) -> bool {
@@ -362,7 +366,7 @@ impl CspList {
     Note that, while this algoritm is defined as operating on a global object, the only property it
     actually uses is the global's CSP List. So this function operates on that.
     */
-    pub fn is_trusted_type_policy_creation_allowed(&self, policy_name: String, created_policy_names: Vec<String>) -> (CheckResult, Vec<Violation>) {
+    pub fn is_trusted_type_policy_creation_allowed(&self, policy_name: &str, created_policy_names: &[&str]) -> (CheckResult, Vec<Violation>) {
         use CheckResult::*;
         // Step 1: Let result be "Allowed".
         let mut result = Allowed;
@@ -381,21 +385,21 @@ impl CspList {
                 }
                 // Step 2.5: If createdPolicyNames contains policyName and directive’s value does not contain a tt-keyword
                 // which is a match for a value 'allow-duplicates', set createViolation to true.
-                if created_policy_names.contains(&policy_name.clone()) && !directive.value.contains(&"'allow-duplicates'".to_string()) {
+                if created_policy_names.contains(&policy_name) && !directive.value.iter().any(|v| v == "'allow-duplicates'") {
                     create_violation = true;
                 }
                 // Step 2.6: If directive’s value does not contain a tt-policy-name, which value is policyName,
                 // and directive’s value does not contain a tt-wildcard, set createViolation to true.
-                if !directive.value.contains(&policy_name) && !directive.value.contains(&"*".to_string()) {
+                if !(TRUSTED_POLICY_SOURCE_GRAMMAR.is_match(&policy_name) && (directive.value.iter().any(|p| p == policy_name) || directive.value.iter().any(|v| v == "*"))) {
                     create_violation = true;
                 }
                 // Step 2.7: If createViolation is false, skip to the next policy.
                 if !create_violation {
                     continue;
                 }
-                let mut sample = policy_name.clone();
+                let max_length = cmp::min(40, policy_name.len());
                 // Step 2.10: Set violation’s sample to the substring of policyName, containing its first 40 characters.
-                sample.truncate(40);
+                let sample = policy_name[0..max_length].to_owned();
                 // Step 2.8: Let violation be the result of executing Create a violation object for global, policy,
                 // and directive on global, policy and "trusted-types"
                 let violation = Violation {
@@ -463,14 +467,22 @@ impl CspList {
         let mut result = Allowed;
         let mut violations = Vec::new();
         // Step 2: Let sample be source.
-        let sample = source;
+        let mut sample = source;
         // Step 3: If sink is "Function", then:
         if sink == "Function" {
-            // There currently is no sink of function, so skipping these for now
             // Step 3.1: If sample starts with "function anonymous", strip that from sample.
-            // Step 3.2: Otherwise if sample starts with "async function anonymous", strip that from sample.
-            // Step 3.3: Otherwise if sample starts with "function* anonymous", strip that from sample.
-            // Step 3.4: Otherwise if sample starts with "async function* anonymous", strip that from sample.
+            if sample.starts_with("function anonymous") {
+                sample = &sample[18..];
+                // Step 3.2: Otherwise if sample starts with "async function anonymous", strip that from sample.
+            } else if sample.starts_with("async function anonymous") {
+                sample = &sample[24..];
+                // Step 3.3: Otherwise if sample starts with "function* anonymous", strip that from sample.
+            } else if sample.starts_with("function* anonymous") {
+                sample = &sample[19..];
+                // Step 3.4: Otherwise if sample starts with "async function* anonymous", strip that from sample.
+            } else if sample.starts_with("async function* anonymous") {
+                sample = &sample[25..];
+            }
         }
         // Step 4: For each policy in global’s CSP list:
         for policy in &self.0 {
@@ -504,15 +516,23 @@ impl CspList {
         // Step 2: Return false.
         (result, violations)
     }
+    /// <https://html.spec.whatwg.org/multipage/#csp-derived-sandboxing-flags>
     pub fn get_sandboxing_flag_set_for_document(&self) -> Option<SandboxingFlagSet> {
+        // Step 1. Let directives be an empty ordered set.
+        // Step 2. For each policy in cspList:
         self.0
             .iter()
             .flat_map(|policy| {
                 policy.directive_set
                     .iter()
+                    // Step 4. Let directive be directives[directives's size − 1].
+                    .rev()
+                    // Step 2.2. If policy's directive set contains a directive whose name is "sandbox",
+                    // then append that directive to directives.
                     .find(|directive| directive.name == "sandbox")
                     .and_then(|directive| directive.get_sandboxing_flag_set_for_document(policy))
             })
+            // Step 3. If directives is empty, then return an empty sandboxing flag set.
             .next()
     }
     /// https://www.w3.org/TR/CSP/#can-compile-strings
@@ -612,7 +632,20 @@ impl CspList {
         (result, violations)
     }
     /// <https://w3c.github.io/webappsec-csp/#should-block-navigation-request>
-    pub fn should_navigation_request_be_blocked(&self, request: &Request, navigation_check_type: NavigationCheckType) -> (CheckResult, Vec<Violation>) {
+    ///
+    /// Here, `url_processor` is a callback to process trusted types (if applicable).
+    /// In case the Trusted Types algorithm returns an Error, return a None. Otherwise
+    /// return a Some with the string as provided by the policy.
+    ///
+    /// If trusted types are not applicable, then the `url_processor` can look like this:
+    /// ```rust
+    /// |s: &str| Some(s.to_owned());
+    /// ```
+    pub fn should_navigation_request_be_blocked<TrustedTypesUrlProcessor>(
+        &self, request: &mut Request, navigation_check_type: NavigationCheckType, url_processor: TrustedTypesUrlProcessor) -> (CheckResult, Vec<Violation>)
+    where
+        TrustedTypesUrlProcessor: Fn(&str) -> Option<String>
+    {
         // Step 1: Let result be "Allowed".
         let mut result = CheckResult::Allowed;
         let mut violations = Vec::new();
@@ -622,7 +655,7 @@ impl CspList {
             for directive in &policy.directive_set {
                 // Step 2.1.1: If directive’s pre-navigation check returns "Allowed"
                 // when executed upon navigation request, type, and policy skip to the next directive.
-                if directive.pre_navigation_check(request, navigation_check_type, policy) == CheckResult::Allowed {
+                if directive.pre_navigation_check(request, navigation_check_type, &url_processor, policy) == CheckResult::Allowed {
                     continue;
                 }
                 // Step 2.1.2: Otherwise, let violation be the result of executing
@@ -752,7 +785,7 @@ pub enum Initiator {
 }
 
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Destination {
     None,
     Audio,
@@ -1354,22 +1387,23 @@ impl Directive {
             _ => Allowed
         }
     }
-    /// https://www.w3.org/TR/CSP/#sandbox-init
+    /// <https://html.spec.whatwg.org/multipage/#csp-derived-sandboxing-flags>
     pub fn get_sandboxing_flag_set_for_document(&self, policy: &Policy) -> Option<SandboxingFlagSet> {
-        use PolicyDisposition::*;
-        match &self.name[..] {
-            "sandbox" => {
-                if policy.disposition != Enforce {
-                    None
-                } else {
-                    Some(parse_a_sandboxing_directive(&self.value[..]))
-                }
-            },
-            _ => None,
+        debug_assert!(&self.name[..] == "sandbox");
+        // Step 2.1. If policy's disposition is not "enforce", then continue.
+        if policy.disposition != PolicyDisposition::Enforce {
+            None
+        } else {
+            // Step 5. Return the result of parsing the sandboxing directive directive.
+            Some(parse_a_sandboxing_directive(&self.value[..]))
         }
     }
     /// <https://w3c.github.io/webappsec-csp/#directive-pre-navigation-check>
-    pub fn pre_navigation_check(&self, request: &Request, type_: NavigationCheckType, _policy: &Policy) -> CheckResult {
+    pub fn pre_navigation_check<TrustedTypesUrlProcessor>(
+        &self, request: &mut Request, type_: NavigationCheckType, url_processor: &TrustedTypesUrlProcessor, _policy: &Policy) -> CheckResult
+    where
+        TrustedTypesUrlProcessor: Fn(&str) -> Option<String>
+    {
         use CheckResult::*;
         match &self.name[..] {
             // <https://w3c.github.io/webappsec-csp/#form-action-pre-navigate>
@@ -1386,6 +1420,36 @@ impl Directive {
                 // Step 3: Return "Allowed".
                 Allowed
             },
+            // <https://www.w3.org/TR/trusted-types/#require-trusted-types-for-pre-navigation-check>
+            "require-trusted-types-for" => {
+                let url = &request.url;
+                // Step 1. If request’s url’s scheme is not "javascript", return "Allowed" and abort further steps.
+                if url.scheme() != "javascript" {
+                    return Allowed;
+                }
+                // Step 2. Let urlString be the result of running the URL serializer on request’s url.
+                //
+                // Already done when creating Request
+                // Step 3. Let encodedScriptSource be the result of removing the leading "javascript:" from urlString.
+                let encoded_script_source = &url[Position::AfterScheme..][1..];
+                // Step 4. Let convertedScriptSource be the result of executing Process value with a default policy algorithm
+                // If that algorithm threw an error or convertedScriptSource is not a TrustedScript object,
+                // return "Blocked" and abort further steps.
+                let Some(converted_script_source) = url_processor(encoded_script_source) else {
+                    return Blocked;
+                };
+                // Step 5. Set urlString to be the result of prepending "javascript:" to stringified convertedScriptSource.
+                let url_string = "javascript:".to_owned() + &converted_script_source;
+                // Step 6. Let newURL be the result of running the URL parser on urlString.
+                // If the parser returns a failure, return "Blocked" and abort further steps.
+                let Ok(new_url) = Url::parse(&url_string) else {
+                    return Blocked;
+                };
+                // Step 7. Set request’s url to newURL.
+                request.url = new_url;
+                // Step 8. Return "Allowed".
+                Allowed
+            }
             _ => Allowed,
         }
     }
@@ -2195,7 +2259,7 @@ mod test {
     pub fn no_trusted_types_specified_allows_all_policies() {
         let csp_list = CspList::parse("default-src 'none'; child-src 'self'", PolicySource::Meta, PolicyDisposition::Enforce);
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy".to_owned(), vec![]);
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy", &vec![]);
         assert_eq!(check_result, CheckResult::Allowed);
         assert!(violations.is_empty());
     }
@@ -2204,7 +2268,7 @@ mod test {
     pub fn none_does_not_allow_for_any_policy() {
         let csp_list = CspList::parse("trusted-types 'none'", PolicySource::Meta, PolicyDisposition::Enforce);
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("some-policy".to_owned(), vec![]);
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("some-policy", &vec![]);
         assert!(check_result == CheckResult::Blocked);
         assert_eq!(violations.len(), 1);
     }
@@ -2213,7 +2277,7 @@ mod test {
     pub fn extra_none_allows_all_policies() {
         let csp_list = CspList::parse("trusted-types some-policy 'none'", PolicySource::Meta, PolicyDisposition::Enforce);
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("some-policy".to_owned(), vec![]);
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("some-policy", &vec![]);
         assert!(check_result == CheckResult::Allowed);
         assert!(violations.is_empty());
     }
@@ -2222,7 +2286,7 @@ mod test {
     pub fn explicit_policy_named_is_allowed() {
         let csp_list = CspList::parse("trusted-types MyPolicy", PolicySource::Meta, PolicyDisposition::Enforce);
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy".to_owned(), vec![]);
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy", &vec![]);
         assert_eq!(check_result, CheckResult::Allowed);
         assert!(violations.is_empty());
     }
@@ -2231,7 +2295,16 @@ mod test {
     pub fn other_policy_name_is_blocked() {
         let csp_list = CspList::parse("trusted-types MyPolicy", PolicySource::Meta, PolicyDisposition::Enforce);
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyOtherPolicy".to_owned(), vec![]);
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyOtherPolicy", &vec![]);
+        assert!(check_result == CheckResult::Blocked);
+        assert_eq!(violations.len(), 1);
+    }
+
+    #[test]
+    pub fn invalid_characters_in_policy_name_is_blocked() {
+        let csp_list = CspList::parse("trusted-types My?Policy", PolicySource::Meta, PolicyDisposition::Enforce);
+        assert!(csp_list.is_valid());
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("My?Policy", &vec!["My?Policy"]);
         assert!(check_result == CheckResult::Blocked);
         assert_eq!(violations.len(), 1);
     }
@@ -2240,7 +2313,7 @@ mod test {
     pub fn already_created_policy_is_blocked() {
         let csp_list = CspList::parse("trusted-types MyPolicy", PolicySource::Meta, PolicyDisposition::Enforce);
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy".to_owned(), vec!["MyPolicy".to_owned()]);
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy", &vec!["MyPolicy"]);
         assert!(check_result == CheckResult::Blocked);
         assert_eq!(violations.len(), 1);
     }
@@ -2249,7 +2322,7 @@ mod test {
     pub fn already_created_policy_is_allowed_with_allow_duplicates() {
         let csp_list = CspList::parse("trusted-types MyPolicy 'allow-duplicates'", PolicySource::Meta, PolicyDisposition::Enforce);
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy".to_owned(), vec!["MyPolicy".to_owned()]);
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy", &vec!["MyPolicy"]);
         assert!(check_result == CheckResult::Allowed);
         assert!(violations.is_empty());
     }
@@ -2258,7 +2331,7 @@ mod test {
     pub fn only_report_policy_issues_for_disposition_report() {
         let csp_list = CspList::parse("trusted-types MyPolicy", PolicySource::Meta, PolicyDisposition::Report);
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy".to_owned(), vec!["MyPolicy".to_owned()]);
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy", &vec!["MyPolicy"]);
         assert!(check_result == CheckResult::Allowed);
         assert_eq!(violations.len(), 1);
     }
@@ -2267,7 +2340,7 @@ mod test {
     pub fn wildcard_allows_all_policies() {
         let csp_list = CspList::parse("trusted-types *", PolicySource::Meta, PolicyDisposition::Report);
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy".to_owned(), vec![]);
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy", &vec![]);
         assert!(check_result == CheckResult::Allowed);
         assert!(violations.is_empty());
     }
@@ -2276,7 +2349,7 @@ mod test {
     pub fn violation_has_correct_directive() {
         let csp_list = CspList::parse("trusted-types MyPolicy", PolicySource::Meta, PolicyDisposition::Enforce);
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyOtherPolicy".to_owned(), vec![]);
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyOtherPolicy", &vec![]);
         assert!(check_result == CheckResult::Blocked);
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].directive, csp_list.0[0].directive_set[0]);
@@ -2286,7 +2359,7 @@ mod test {
     pub fn long_policy_name_is_truncated() {
         let csp_list = CspList::parse("trusted-types MyPolicy", PolicySource::Meta, PolicyDisposition::Enforce);
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("SuperLongPolicyNameThatExceeds40Characters".to_owned(), vec![]);
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("SuperLongPolicyNameThatExceeds40Characters", &vec![]);
         assert!(check_result == CheckResult::Blocked);
         assert_eq!(violations.len(), 1);
         assert!(matches!(&violations[0].resource, ViolationResource::TrustedTypePolicy { sample } if sample == "SuperLongPolicyNameThatExceeds40Characte"));
