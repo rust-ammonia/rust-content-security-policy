@@ -31,7 +31,7 @@ impl<'a> Iterator for SplitAsciiWhitespace<'a> {
     }
 }
 
-pub(crate) fn split_ascii_whitespace(string: &str) -> SplitAsciiWhitespace {
+pub(crate) fn split_ascii_whitespace(string: &'_ str) -> SplitAsciiWhitespace<'_> {
     SplitAsciiWhitespace(string)
 }
 
@@ -51,7 +51,7 @@ impl<'a> Iterator for SplitCommas<'a> {
     }
 }
 
-pub(crate) fn split_commas(string: &str) -> SplitCommas {
+pub(crate) fn split_commas(string: &'_ str) -> SplitCommas<'_> {
     SplitCommas(string)
 }
 
