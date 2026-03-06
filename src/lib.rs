@@ -1878,9 +1878,8 @@ fn does_url_match_expression_in_origin_with_redirect_count(
             return DoesNotMatch;
         }
         // Skip the first byte of the port capture to avoid the `:`.
-        let port_part = captures.name("port").map(|port| &port.as_str()[1..]).unwrap_or("");
-        let url_port = url_port(url);
-        if port_part_match(port_part, &url_port[..], url.scheme()) != Matches {
+        let port_part = captures.name("port").map(|port| &port.as_str()[1..]);
+        if port_part_match(port_part, url) != Matches {
             return DoesNotMatch;
         }
         let path_part = captures.name("path").map(|path_part| path_part.as_str()).unwrap_or("");
@@ -1963,27 +1962,34 @@ fn host_part_match(pattern: &str, host: &str) -> MatchResult {
 }
 
 /// https://www.w3.org/TR/CSP/#match-ports
-fn port_part_match(port_a: &str, port_b: &str, scheme_b: &str) -> MatchResult {
-    if port_a.is_empty() {
-        if port_b == default_port_str(scheme_b) {
-            return Matches;
-        } else {
-            return DoesNotMatch;
-        }
-    }
-    if port_a == "*" {
+fn port_part_match(input: Option<&str>, url: &Url) -> MatchResult {
+    use std::str::FromStr;
+    // 1. Assert: input is null, "*", or a sequence of one or more ASCII digits.
+    debug_assert!(input.is_none() || input == Some("*") || u16::from_str(input.unwrap()).is_ok());
+    // 2. If input is equal to "*", return "Matches".
+    if input == Some("*") {
         return Matches;
     }
-    if port_a == port_b {
+    // 3. Let normalizedInput be null if input null; otherwise input interpreted as decimal number.
+    let normalized_input = if let Some(input) = input {
+        u16::from_str(&input).ok()
+    } else {
+        None
+    };
+    // 4. If normalizedInput equals url’s port, return "Matches".
+    if normalized_input == url.port() {
         return Matches;
     }
-    if port_b.is_empty() {
-        if port_a == default_port_str(scheme_b) {
+    // 5. If url’s port is null:
+    if url.port().is_none() {
+        // 5.1. Let defaultPort be the default port for url’s scheme.
+        let default_port = default_port(url.scheme());
+        // 5.2. If normalizedInput equals defaultPort, return "Matches".
+        if normalized_input == default_port {
             return Matches;
-        } else {
-            return DoesNotMatch;
         }
     }
+    // 6. Return "Does Not Match".
     DoesNotMatch
 }
 
@@ -2018,25 +2024,6 @@ fn path_part_match(path_a: &str, path_b: &str) -> MatchResult {
         }
     }
     Matches
-}
-
-fn url_port(url: &Url) -> String {
-    match url.port() {
-        Some(num) => num.to_string(),
-        None => default_port_str(url.scheme()).to_string(),
-    }
-}
-
-fn default_port_str(scheme: &str) -> &'static str {
-    match scheme {
-        "ftp" => "21",
-        "gopher" => "70",
-        "http" => "80",
-        "https" => "443",
-        "ws" => "80",
-        "wss" => "443",
-        _ => "",
-    }
 }
 
 fn default_port(scheme: &str) -> Option<u16> {
