@@ -642,9 +642,9 @@ impl CspList {
     /// |s: &str| Some(s.to_owned());
     /// ```
     pub fn should_navigation_request_be_blocked<TrustedTypesUrlProcessor>(
-        &self, request: &mut Request, navigation_check_type: NavigationCheckType, url_processor: TrustedTypesUrlProcessor) -> (CheckResult, Vec<Violation>)
+        &self, request: &mut Request, navigation_check_type: NavigationCheckType, mut url_processor: TrustedTypesUrlProcessor) -> (CheckResult, Vec<Violation>)
     where
-        TrustedTypesUrlProcessor: Fn(&str) -> Option<String>
+        TrustedTypesUrlProcessor: FnMut(&str) -> Option<String>
     {
         // Step 1: Let result be "Allowed".
         let mut result = CheckResult::Allowed;
@@ -655,7 +655,7 @@ impl CspList {
             for directive in &policy.directive_set {
                 // Step 2.1.1: If directive’s pre-navigation check returns "Allowed"
                 // when executed upon navigation request, type, and policy skip to the next directive.
-                if directive.pre_navigation_check(request, navigation_check_type, &url_processor, policy) == CheckResult::Allowed {
+                if directive.pre_navigation_check(request, navigation_check_type, &mut url_processor, policy) == CheckResult::Allowed {
                     continue;
                 }
                 // Step 2.1.2: Otherwise, let violation be the result of executing
@@ -1400,9 +1400,9 @@ impl Directive {
     }
     /// <https://w3c.github.io/webappsec-csp/#directive-pre-navigation-check>
     pub fn pre_navigation_check<TrustedTypesUrlProcessor>(
-        &self, request: &mut Request, type_: NavigationCheckType, url_processor: &TrustedTypesUrlProcessor, _policy: &Policy) -> CheckResult
+        &self, request: &mut Request, type_: NavigationCheckType, mut url_processor: TrustedTypesUrlProcessor, _policy: &Policy) -> CheckResult
     where
-        TrustedTypesUrlProcessor: Fn(&str) -> Option<String>
+        TrustedTypesUrlProcessor: FnMut(&str) -> Option<String>
     {
         use CheckResult::*;
         match &self.name[..] {
