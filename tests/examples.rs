@@ -24,7 +24,7 @@ macro_rules! test_should_request_be_blocked {
 }
 
 // all tests should have a name starting with pre_request_
-test_should_request_be_blocked!{
+test_should_request_be_blocked! {
     (   name: pre_request_wild_connect_port_allow,
         url: "https://www.notriddle.com:443/meta",
         origin: "https://example.com",
@@ -388,7 +388,7 @@ macro_rules! test_should_elements_inline_type_behavior_be_blocked {
 }
 
 // all tests should have a name starting with inline_
-test_should_elements_inline_type_behavior_be_blocked!{
+test_should_elements_inline_type_behavior_be_blocked! {
     (   name: inline_blocked_script,
         policy: "script-src 'none'",
         nonce: None,
@@ -417,7 +417,7 @@ macro_rules! test_should_js_evaluation_be_blocked {
 }
 
 // all tests should have a name starting with eval_
-test_should_js_evaluation_be_blocked!{
+test_should_js_evaluation_be_blocked! {
     (   name: eval_javascript_with_no_directive,
         policy: "script-src",
         disposition: Enforce,
@@ -458,7 +458,6 @@ test_should_js_evaluation_be_blocked!{
     )
 }
 
-
 macro_rules! test_should_wasm_evaluation_be_blocked {
     ($((name: $name:ident, policy: $policy:expr, disposition: $disposition:tt, result: $result:tt)),*$(,)*) => {
         $(
@@ -473,7 +472,7 @@ macro_rules! test_should_wasm_evaluation_be_blocked {
 }
 
 // all tests should have a name starting with eval_
-test_should_wasm_evaluation_be_blocked!{
+test_should_wasm_evaluation_be_blocked! {
     (   name: eval_webassembly_with_no_directive,
         policy: "script-src",
         disposition: Enforce,

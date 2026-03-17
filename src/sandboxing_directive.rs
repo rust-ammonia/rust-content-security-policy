@@ -1,7 +1,8 @@
-#[cfg(feature = "serde")] use serde::{Deserialize, Serialize};
 use bitflags::bitflags;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
-bitflags!{
+bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
     pub struct SandboxingFlagSet: u32 {

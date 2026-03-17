@@ -6,11 +6,12 @@ pub(crate) fn strip_leading_and_trailing_ascii_whitespace(string: &str) -> &str 
     string.trim_matches(is_char_ascii_whitespace)
 }
 
-pub(crate) fn collect_a_sequence_of_non_ascii_white_space_code_points(string: &str)
-                                                           -> (&str, &str) {
+pub(crate) fn collect_a_sequence_of_non_ascii_white_space_code_points(
+    string: &str,
+) -> (&str, &str) {
     match string.find(is_char_ascii_whitespace) {
         Some(i) => string.split_at(i),
-        None => (string, "")
+        None => (string, ""),
     }
 }
 
