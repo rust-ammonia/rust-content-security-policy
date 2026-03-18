@@ -9,6 +9,7 @@ macro_rules! test_should_request_be_blocked {
                 let csp_list = CspList::parse($policy, PolicySource::Header, PolicyDisposition::Enforce);
                 let (check_result, _) = csp_list.should_request_be_blocked(&Request {
                     url: Url::parse($url).unwrap(),
+                    current_url: Url::parse($url).unwrap(),
                     origin: Url::parse($origin).unwrap().origin(),
                     redirect_count: 0,
                     destination: Destination::$destination,
@@ -368,6 +369,32 @@ test_should_request_be_blocked! {
         policy: "child-src 'none'",
         dest: Worker,
         result: Blocked),
+}
+
+#[test]
+fn should_check_against_current_url_for_redirects() {
+    let csp_list = CspList::parse(
+        "script-src *.notriddle.com",
+        PolicySource::Header,
+        PolicyDisposition::Enforce,
+    );
+    let url =
+        Url::parse("https://www.notriddle.com/redirect.py?url=https://www.evil.com/script.js")
+            .unwrap();
+    let (check_result, violations) = csp_list.should_request_be_blocked(&Request {
+        url: url.clone(),
+        current_url: Url::parse("https://www.evil.com/script.js").unwrap(),
+        origin: Url::parse("https://www.notriddle.com").unwrap().origin(),
+        redirect_count: 0,
+        destination: Destination::Script,
+        initiator: Initiator::None,
+        nonce: String::new(),
+        integrity_metadata: String::new(),
+        parser_metadata: ParserMetadata::None,
+    });
+    assert_eq!(check_result, CheckResult::Blocked);
+    assert_eq!(violations.len(), 1);
+    assert_eq!(violations[0].resource, ViolationResource::Url(url));
 }
 
 macro_rules! test_should_elements_inline_type_behavior_be_blocked {
