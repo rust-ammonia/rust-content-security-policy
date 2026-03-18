@@ -10,6 +10,13 @@ on:
   merge_group:
 
 jobs:
+  format:
+    name: Check code formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - name: Run cargo format
+        run: cargo fmt --check
   test:
     name: Test
     runs-on: ${{ matrix.os }}
@@ -32,6 +39,7 @@ jobs:
     if: ${{ success() }}
     needs:
       - test
+      - format
     runs-on: ubuntu-latest
     steps:
       - name: CI succeeded

@@ -36,32 +36,30 @@ fn main() {
 
 #![forbid(unsafe_code)]
 
-pub extern crate url;
 pub extern crate percent_encoding;
+pub extern crate url;
 
-pub(crate) mod text_util;
 pub mod sandboxing_directive;
+pub(crate) mod text_util;
 
-pub use url::{Origin, Position, Url};
-#[cfg(feature = "serde")] use serde::{Deserialize, Serialize};
+use once_cell::sync::Lazy;
+use regex::Regex;
+use sandboxing_directive::{parse_a_sandboxing_directive, SandboxingFlagSet};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::borrow::{Borrow, Cow};
 use std::cmp;
+use std::collections::HashSet;
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
 use text_util::{
-    strip_leading_and_trailing_ascii_whitespace,
-    split_ascii_whitespace,
-    split_commas,
-    ascii_case_insensitive_match,
-    collect_a_sequence_of_non_ascii_white_space_code_points,
+    ascii_case_insensitive_match, collect_a_sequence_of_non_ascii_white_space_code_points,
+    split_ascii_whitespace, split_commas, strip_leading_and_trailing_ascii_whitespace,
 };
-use sandboxing_directive::{SandboxingFlagSet, parse_a_sandboxing_directive};
-use MatchResult::Matches;
+pub use url::{Origin, Position, Url};
 use MatchResult::DoesNotMatch;
-use std::collections::HashSet;
-use regex::Regex;
-use once_cell::sync::Lazy;
+use MatchResult::Matches;
 
 fn scheme_is_network(scheme: &str) -> bool {
     scheme == "ftp" || scheme_is_httpx(scheme)
@@ -98,20 +96,29 @@ impl Display for Policy {
 
 impl Policy {
     pub fn is_valid(&self) -> bool {
-        self.directive_set.iter().all(Directive::is_valid) &&
-            self.directive_set.iter().map(|d| d.name.clone()).collect::<HashSet<_>>().len() == self.directive_set.len() &&
-            !self.directive_set.is_empty()
+        self.directive_set.iter().all(Directive::is_valid)
+            && self
+                .directive_set
+                .iter()
+                .map(|d| d.name.clone())
+                .collect::<HashSet<_>>()
+                .len()
+                == self.directive_set.len()
+            && !self.directive_set.is_empty()
     }
     /// https://www.w3.org/TR/CSP/#parse-serialized-policy
     pub fn parse(serialized: &str, source: PolicySource, disposition: PolicyDisposition) -> Policy {
         let mut policy = Policy {
             directive_set: Vec::new(),
-            source, disposition,
+            source,
+            disposition,
         };
         // Rust's str::split corresponds to a WHATWG "strict split"
         for token in serialized.split(';') {
             let token = strip_leading_and_trailing_ascii_whitespace(token);
-            if token.is_empty() { continue };
+            if token.is_empty() {
+                continue;
+            };
             let (directive_name, token) =
                 collect_a_sequence_of_non_ascii_white_space_code_points(token);
             let mut directive_name = directive_name.to_owned();
@@ -148,8 +155,7 @@ impl Policy {
 
     /// https://www.w3.org/TR/CSP/#does-resource-hint-violate-policy
     pub fn does_resource_hint_violate_policy(&self, request: &Request) -> Violates {
-        let default_directive = &self.directive_set.iter()
-            .find(|x| x.name == "default-src");
+        let default_directive = &self.directive_set.iter().find(|x| x.name == "default-src");
 
         if default_directive.is_none() {
             return Violates::DoesNotViolate;
@@ -193,14 +199,18 @@ impl CspList {
     }
     /// https://www.w3.org/TR/CSP/#contains-a-header-delivered-content-security-policy
     pub fn contains_a_header_delivered_content_security_policy(&self) -> bool {
-        self.0.iter().any(|policy| policy.source == PolicySource::Header)
+        self.0
+            .iter()
+            .any(|policy| policy.source == PolicySource::Header)
     }
     /// https://www.w3.org/TR/CSP/#parse-serialized-policy-list
     pub fn parse(list: &str, source: PolicySource, disposition: PolicyDisposition) -> CspList {
         let mut policies = Vec::new();
         for token in split_commas(list) {
             let policy = Policy::parse(token, source, disposition);
-            if policy.directive_set.is_empty() { continue };
+            if policy.directive_set.is_empty() {
+                continue;
+            };
             policies.push(policy)
         }
         CspList(policies)
@@ -216,11 +226,12 @@ impl CspList {
 
     https://www.w3.org/TR/CSP/#report-for-request
     */
-    pub fn report_violations_for_request(&self, request: &Request)
-        -> Vec<Violation> {
+    pub fn report_violations_for_request(&self, request: &Request) -> Vec<Violation> {
         let mut violations = Vec::new();
         for policy in &self.0 {
-            if policy.disposition == PolicyDisposition::Enforce { continue };
+            if policy.disposition == PolicyDisposition::Enforce {
+                continue;
+            };
             let violates = policy.does_request_violate_policy(request);
             if let Violates::Directive(directive) = violates {
                 let resource = ViolationResource::Url(request.url.clone());
@@ -246,7 +257,9 @@ impl CspList {
         let mut result = CheckResult::Allowed;
         let mut violations = Vec::new();
         for policy in &self.0 {
-            if policy.disposition == PolicyDisposition::Report { continue };
+            if policy.disposition == PolicyDisposition::Report {
+                continue;
+            };
             let violates = policy.does_request_violate_policy(request);
             if let Violates::Directive(directive) = violates {
                 result = CheckResult::Blocked;
@@ -269,8 +282,11 @@ impl CspList {
 
     https://www.w3.org/TR/CSP/#should-block-response
     */
-    pub fn should_response_to_request_be_blocked(&self, request: &Request, response: &Response)
-        -> (CheckResult, Vec<Violation>) {
+    pub fn should_response_to_request_be_blocked(
+        &self,
+        request: &Request,
+        response: &Response,
+    ) -> (CheckResult, Vec<Violation>) {
         // Step 1. Let CSP list be request’s policy container’s CSP list.
         // step 2. Let result be "Allowed".
         let mut result = CheckResult::Allowed;
@@ -301,7 +317,12 @@ impl CspList {
         (result, violations)
     }
     /// https://www.w3.org/TR/CSP/#should-block-inline
-    pub fn should_elements_inline_type_behavior_be_blocked(&self, element: &Element, type_: InlineCheckType, source: &str) -> (CheckResult, Vec<Violation>) {
+    pub fn should_elements_inline_type_behavior_be_blocked(
+        &self,
+        element: &Element,
+        type_: InlineCheckType,
+        source: &str,
+    ) -> (CheckResult, Vec<Violation>) {
         use CheckResult::*;
         let mut result = Allowed;
         let mut violations = Vec::new();
@@ -317,7 +338,7 @@ impl CspList {
                     None
                 };
                 let violation = Violation {
-                    resource: ViolationResource::Inline{ sample },
+                    resource: ViolationResource::Inline { sample },
                     directive: Directive {
                         name: get_the_effective_directive_for_inline_checks(type_).to_owned(),
                         value: directive.value.clone(),
@@ -338,13 +359,23 @@ impl CspList {
     Note that, while this algoritm is defined as operating on a document, the only property it
     actually uses is the document's CSP List. So this function operates on that.
     */
-    pub fn is_base_allowed_for_document(&self, base: &Url, self_origin: &Origin) -> (CheckResult, Vec<Violation>) {
+    pub fn is_base_allowed_for_document(
+        &self,
+        base: &Url,
+        self_origin: &Origin,
+    ) -> (CheckResult, Vec<Violation>) {
         use CheckResult::*;
         let mut violations = Vec::new();
         for policy in &self.0 {
-            let directive = policy.directive_set.iter().find(|directive| directive.name == "base-uri");
+            let directive = policy
+                .directive_set
+                .iter()
+                .find(|directive| directive.name == "base-uri");
             if let Some(directive) = directive {
-                if SourceList(&directive.value).does_url_match_source_list_in_origin_with_redirect_count(base, &self_origin, 0) == DoesNotMatch {
+                if SourceList(&directive.value)
+                    .does_url_match_source_list_in_origin_with_redirect_count(base, &self_origin, 0)
+                    == DoesNotMatch
+                {
                     let violation = Violation {
                         directive: directive.clone(),
                         resource: ViolationResource::Inline { sample: None },
@@ -366,7 +397,11 @@ impl CspList {
     Note that, while this algoritm is defined as operating on a global object, the only property it
     actually uses is the global's CSP List. So this function operates on that.
     */
-    pub fn is_trusted_type_policy_creation_allowed(&self, policy_name: &str, created_policy_names: &[&str]) -> (CheckResult, Vec<Violation>) {
+    pub fn is_trusted_type_policy_creation_allowed(
+        &self,
+        policy_name: &str,
+        created_policy_names: &[&str],
+    ) -> (CheckResult, Vec<Violation>) {
         use CheckResult::*;
         // Step 1: Let result be "Allowed".
         let mut result = Allowed;
@@ -376,7 +411,10 @@ impl CspList {
             // Step 2.1: Let createViolation be false.
             let mut create_violation = false;
             // Step 2.2: If policy’s directive set does not contain a directive which name is "trusted-types", skip to the next policy.
-            let directive = policy.directive_set.iter().find(|directive| directive.name == "trusted-types");
+            let directive = policy
+                .directive_set
+                .iter()
+                .find(|directive| directive.name == "trusted-types");
             // Step 2.3: Let directive be the policy’s directive set’s directive which name is "trusted-types"
             if let Some(directive) = directive {
                 // Step 2.4: If directive’s value only contains a tt-keyword which is a match for a value 'none', set createViolation to true.
@@ -385,12 +423,17 @@ impl CspList {
                 }
                 // Step 2.5: If createdPolicyNames contains policyName and directive’s value does not contain a tt-keyword
                 // which is a match for a value 'allow-duplicates', set createViolation to true.
-                if created_policy_names.contains(&policy_name) && !directive.value.iter().any(|v| v == "'allow-duplicates'") {
+                if created_policy_names.contains(&policy_name)
+                    && !directive.value.iter().any(|v| v == "'allow-duplicates'")
+                {
                     create_violation = true;
                 }
                 // Step 2.6: If directive’s value does not contain a tt-policy-name, which value is policyName,
                 // and directive’s value does not contain a tt-wildcard, set createViolation to true.
-                if !(TRUSTED_POLICY_SOURCE_GRAMMAR.is_match(&policy_name) && (directive.value.iter().any(|p| p == policy_name) || directive.value.iter().any(|v| v == "*"))) {
+                if !(TRUSTED_POLICY_SOURCE_GRAMMAR.is_match(&policy_name)
+                    && (directive.value.iter().any(|p| p == policy_name)
+                        || directive.value.iter().any(|v| v == "*")))
+                {
                     create_violation = true;
                 }
                 // Step 2.7: If createViolation is false, skip to the next policy.
@@ -427,12 +470,19 @@ impl CspList {
     Note that, while this algoritm is defined as operating on a global object, the only property it
     actually uses is the global's CSP List. So this function operates on that.
     */
-    pub fn does_sink_type_require_trusted_types(&self, sink_group: &str, include_report_only_policies: bool) -> bool {
+    pub fn does_sink_type_require_trusted_types(
+        &self,
+        sink_group: &str,
+        include_report_only_policies: bool,
+    ) -> bool {
         let sink_group = &sink_group.to_owned();
         // Step 1: For each policy in global’s CSP list:
         for policy in &self.0 {
             // Step 1.1: If policy’s directive set does not contain a directive whose name is "require-trusted-types-for", skip to the next policy.
-            let directive = policy.directive_set.iter().find(|directive| directive.name == "require-trusted-types-for");
+            let directive = policy
+                .directive_set
+                .iter()
+                .find(|directive| directive.name == "require-trusted-types-for");
             // Step 1.2: Let directive be the policy’s directive set’s directive whose name is "require-trusted-types-for"
             if let Some(directive) = directive {
                 // Step 1.3: If directive’s value does not contain a trusted-types-sink-group which is a match for sinkGroup, skip to the next policy.
@@ -460,7 +510,12 @@ impl CspList {
     Note that, while this algoritm is defined as operating on a global object, the only property it
     actually uses is the global's CSP List. So this function operates on that.
     */
-    pub fn should_sink_type_mismatch_violation_be_blocked_by_csp(&self, sink: &str, sink_group: &str, source: &str) -> (CheckResult, Vec<Violation>) {
+    pub fn should_sink_type_mismatch_violation_be_blocked_by_csp(
+        &self,
+        sink: &str,
+        sink_group: &str,
+        source: &str,
+    ) -> (CheckResult, Vec<Violation>) {
         use CheckResult::*;
         let sink_group = &sink_group.to_owned();
         // Step 1: Let result be "Allowed".
@@ -487,7 +542,10 @@ impl CspList {
         // Step 4: For each policy in global’s CSP list:
         for policy in &self.0 {
             // Step 4.1: If policy’s directive set does not contain a directive whose name is "require-trusted-types-for", skip to the next policy.
-            let directive = policy.directive_set.iter().find(|directive| directive.name == "require-trusted-types-for");
+            let directive = policy
+                .directive_set
+                .iter()
+                .find(|directive| directive.name == "require-trusted-types-for");
             // Step 4.2: Let directive be the policy’s directive set’s directive whose name is "require-trusted-types-for"
             let Some(directive) = directive else { continue };
             // Step 4.3: If directive’s value does not contain a trusted-types-sink-group which is a match for sinkGroup, skip to the next policy.
@@ -523,7 +581,8 @@ impl CspList {
         self.0
             .iter()
             .flat_map(|policy| {
-                policy.directive_set
+                policy
+                    .directive_set
                     .iter()
                     // Step 4. Let directive be directives[directives's size − 1].
                     .rev()
@@ -542,14 +601,20 @@ impl CspList {
         // Step 5: For each policy of global’s CSP list:
         for policy in &self.0 {
             // Step 5.1: Let source-list be null.
-            let directive = policy.directive_set
+            let directive = policy
+                .directive_set
                 .iter()
                 // Step 5.2: If policy contains a directive whose name is "script-src",
                 // then set source-list to that directive’s value.
                 .find(|directive| directive.name == "script-src")
                 // Step 5.2: Otherwise if policy contains a directive whose name is "default-src",
                 // then set source-list to that directive’s value.
-                .or_else(|| policy.directive_set.iter().find(|directive| directive.name == "default-src"));
+                .or_else(|| {
+                    policy
+                        .directive_set
+                        .iter()
+                        .find(|directive| directive.name == "default-src")
+                });
             // Step 5.3: If source-list is not null:
             let Some(directive) = directive else { continue };
             let source_list = SourceList(&directive.value);
@@ -558,15 +623,25 @@ impl CspList {
             }
             // Step 5.3.1: Let trustedTypesRequired be the result of executing
             // Does sink type require trusted types?, with realm, 'script', and false.
-            let trusted_types_required = self.does_sink_type_require_trusted_types("'script'", false);
+            let trusted_types_required =
+                self.does_sink_type_require_trusted_types("'script'", false);
             // Step 5.3.2: If trustedTypesRequired is true and source-list contains a source expression
             // which is an ASCII case-insensitive match for the string "'trusted-types-eval'", then skip the following steps.
-            if trusted_types_required && directive.value.iter().any(|t| ascii_case_insensitive_match(&t[..], "'trusted-types-eval'")) {
+            if trusted_types_required
+                && directive
+                    .value
+                    .iter()
+                    .any(|t| ascii_case_insensitive_match(&t[..], "'trusted-types-eval'"))
+            {
                 continue;
             }
             // Step 5.3.3: If source-list contains a source expression which is
             // an ASCII case-insensitive match for the string "'unsafe-eval'", then skip the following steps.
-            if directive.value.iter().any(|t| ascii_case_insensitive_match(&t[..], "'unsafe-eval'")) {
+            if directive
+                .value
+                .iter()
+                .any(|t| ascii_case_insensitive_match(&t[..], "'unsafe-eval'"))
+            {
                 continue;
             }
             // Step 5.3.6: If source-list contains the expression "'report-sample'",
@@ -599,14 +674,20 @@ impl CspList {
         // Step 3: For each policy of global’s CSP list:
         for policy in &self.0 {
             // Step 3.1: Let source-list be null.
-            let directive = policy.directive_set
+            let directive = policy
+                .directive_set
                 .iter()
                 // Step 3.2: If policy contains a directive whose name is "script-src",
                 // then set source-list to that directive’s value.
                 .find(|directive| directive.name == "script-src")
                 // Step 3.2: Otherwise if policy contains a directive whose name is "default-src",
                 // then set source-list to that directive’s value.
-                .or_else(|| policy.directive_set.iter().find(|directive| directive.name == "default-src"));
+                .or_else(|| {
+                    policy
+                        .directive_set
+                        .iter()
+                        .find(|directive| directive.name == "default-src")
+                });
             let Some(directive) = directive else { continue };
             let source_list = SourceList(&directive.value);
             // Step 3.3: If source-list is non-null, and does not contain a source expression
@@ -642,9 +723,13 @@ impl CspList {
     /// |s: &str| Some(s.to_owned());
     /// ```
     pub fn should_navigation_request_be_blocked<TrustedTypesUrlProcessor>(
-        &self, request: &mut Request, navigation_check_type: NavigationCheckType, mut url_processor: TrustedTypesUrlProcessor) -> (CheckResult, Vec<Violation>)
+        &self,
+        request: &mut Request,
+        navigation_check_type: NavigationCheckType,
+        mut url_processor: TrustedTypesUrlProcessor,
+    ) -> (CheckResult, Vec<Violation>)
     where
-        TrustedTypesUrlProcessor: FnMut(&str) -> Option<String>
+        TrustedTypesUrlProcessor: FnMut(&str) -> Option<String>,
     {
         // Step 1: Let result be "Allowed".
         let mut result = CheckResult::Allowed;
@@ -655,7 +740,13 @@ impl CspList {
             for directive in &policy.directive_set {
                 // Step 2.1.1: If directive’s pre-navigation check returns "Allowed"
                 // when executed upon navigation request, type, and policy skip to the next directive.
-                if directive.pre_navigation_check(request, navigation_check_type, &mut url_processor, policy) == CheckResult::Allowed {
+                if directive.pre_navigation_check(
+                    request,
+                    navigation_check_type,
+                    &mut url_processor,
+                    policy,
+                ) == CheckResult::Allowed
+                {
                     continue;
                 }
                 // Step 2.1.2: Otherwise, let violation be the result of executing
@@ -684,7 +775,13 @@ impl CspList {
                 for directive in &policy.directive_set {
                     // Step 3.1.1.2: If directive’s inline check returns "Allowed" when executed upon null,
                     // "navigation" and navigation request’s current URL, skip to the next directive.
-                    if directive.inline_check(&Element { nonce: None }, InlineCheckType::Navigation, policy, request.url.as_str()) == CheckResult::Allowed {
+                    if directive.inline_check(
+                        &Element { nonce: None },
+                        InlineCheckType::Navigation,
+                        policy,
+                        request.url.as_str(),
+                    ) == CheckResult::Allowed
+                    {
                         continue;
                     }
                     // Step 3.1.1.3: Otherwise, let violation be the result of executing
@@ -696,7 +793,10 @@ impl CspList {
                         directive: Directive {
                             // Step 3.1.1.1: Let directive-name be the result of executing
                             // § 6.8.2 Get the effective directive for inline checks on type.
-                            name: get_the_effective_directive_for_inline_checks(InlineCheckType::Navigation).to_owned(),
+                            name: get_the_effective_directive_for_inline_checks(
+                                InlineCheckType::Navigation,
+                            )
+                            .to_owned(),
                             value: directive.value.clone(),
                         },
                         policy: policy.clone(),
@@ -853,7 +953,10 @@ impl Destination {
     /// https://fetch.spec.whatwg.org/#request-destination-script-like
     pub fn is_script_like(self) -> bool {
         use Destination::*;
-        matches!(self, AudioWorklet | PaintWorklet | Script | ServiceWorker | SharedWorker | Worker | Xslt)
+        matches!(
+            self,
+            AudioWorklet | PaintWorklet | Script | ServiceWorker | SharedWorker | Worker | Xslt
+        )
     }
 
     pub const fn as_str(&self) -> &'static str {
@@ -917,18 +1020,10 @@ https://www.w3.org/TR/CSP/#violation
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum ViolationResource {
     Url(Url),
-    Inline {
-        sample: Option<String>,
-    },
-    TrustedTypePolicy {
-        sample: String,
-    },
-    TrustedTypeSink {
-        sample: String,
-    },
-    Eval {
-        sample: Option<String>,
-    },
+    Inline { sample: Option<String> },
+    TrustedTypePolicy { sample: String },
+    TrustedTypeSink { sample: String },
+    Eval { sample: Option<String> },
     WasmEval,
 }
 
@@ -994,8 +1089,11 @@ impl Display for Directive {
 impl Directive {
     /// https://www.w3.org/TR/CSP/#serialized-directive
     pub fn is_valid(&self) -> bool {
-        DIRECTIVE_NAME_GRAMMAR.is_match(&self.name) &&
-            self.value.iter().all(|t| DIRECTIVE_VALUE_TOKEN_GRAMMAR.is_match(&t[..]))
+        DIRECTIVE_NAME_GRAMMAR.is_match(&self.name)
+            && self
+                .value
+                .iter()
+                .all(|t| DIRECTIVE_VALUE_TOKEN_GRAMMAR.is_match(&t[..]))
     }
     /// https://www.w3.org/TR/CSP/#directive-pre-request-check
     pub fn pre_request_check(&self, request: &Request, policy: &Policy) -> CheckResult {
@@ -1009,14 +1107,17 @@ impl Directive {
                 (Directive {
                     name: String::from(name),
                     value: self.value.clone(),
-                }).pre_request_check(request, policy)
-            },
+                })
+                .pre_request_check(request, policy)
+            }
             "connect-src" => {
                 let name = get_the_effective_directive_for_request(request);
                 if !should_fetch_directive_execute(name, "connect-src", policy) {
                     return Allowed;
                 }
-                if SourceList(&self.value[..]).does_request_match_source_list(request) == DoesNotMatch {
+                if SourceList(&self.value[..]).does_request_match_source_list(request)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1029,14 +1130,17 @@ impl Directive {
                 (Directive {
                     name: String::from(name),
                     value: self.value.clone(),
-                }).pre_request_check(request, policy)
+                })
+                .pre_request_check(request, policy)
             }
             "font-src" => {
                 let name = get_the_effective_directive_for_request(request);
                 if !should_fetch_directive_execute(name, "font-src", policy) {
                     return Allowed;
                 }
-                if SourceList(&self.value[..]).does_request_match_source_list(request) == DoesNotMatch {
+                if SourceList(&self.value[..]).does_request_match_source_list(request)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1046,7 +1150,9 @@ impl Directive {
                 if !should_fetch_directive_execute(name, "frame-src", policy) {
                     return Allowed;
                 }
-                if SourceList(&self.value[..]).does_request_match_source_list(request) == DoesNotMatch {
+                if SourceList(&self.value[..]).does_request_match_source_list(request)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1056,7 +1162,9 @@ impl Directive {
                 if !should_fetch_directive_execute(name, "img-src", policy) {
                     return Allowed;
                 }
-                if SourceList(&self.value[..]).does_request_match_source_list(request) == DoesNotMatch {
+                if SourceList(&self.value[..]).does_request_match_source_list(request)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1066,7 +1174,9 @@ impl Directive {
                 if !should_fetch_directive_execute(name, "manifest-src", policy) {
                     return Allowed;
                 }
-                if SourceList(&self.value[..]).does_request_match_source_list(request) == DoesNotMatch {
+                if SourceList(&self.value[..]).does_request_match_source_list(request)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1076,7 +1186,9 @@ impl Directive {
                 if !should_fetch_directive_execute(name, "media-src", policy) {
                     return Allowed;
                 }
-                if SourceList(&self.value[..]).does_request_match_source_list(request) == DoesNotMatch {
+                if SourceList(&self.value[..]).does_request_match_source_list(request)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1086,7 +1198,9 @@ impl Directive {
                 if !should_fetch_directive_execute(name, "object-src", policy) {
                     return Allowed;
                 }
-                if SourceList(&self.value[..]).does_request_match_source_list(request) == DoesNotMatch {
+                if SourceList(&self.value[..]).does_request_match_source_list(request)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1148,7 +1262,12 @@ impl Directive {
         }
     }
     /// https://www.w3.org/TR/CSP/#directive-post-request-check
-    pub fn post_request_check(&self, request: &Request, response: &Response, policy: &Policy) -> CheckResult {
+    pub fn post_request_check(
+        &self,
+        request: &Request,
+        response: &Response,
+        policy: &Policy,
+    ) -> CheckResult {
         use CheckResult::*;
         match &self.name[..] {
             "child-src" => {
@@ -1158,8 +1277,9 @@ impl Directive {
                 }
                 Directive {
                     name: name.to_owned(),
-                    value: self.value.clone()
-                }.post_request_check(request, response, policy)
+                    value: self.value.clone(),
+                }
+                .post_request_check(request, response, policy)
             }
             "connect-src" => {
                 let name = get_the_effective_directive_for_request(request);
@@ -1167,7 +1287,9 @@ impl Directive {
                     return Allowed;
                 }
                 let source_list = SourceList(&self.value);
-                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                if source_list.does_response_to_request_match_source_list(request, response)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1180,7 +1302,8 @@ impl Directive {
                 Directive {
                     name: name.to_owned(),
                     value: self.value.clone(),
-                }.post_request_check(request, response, policy)
+                }
+                .post_request_check(request, response, policy)
             }
             "font-src" => {
                 let name = get_the_effective_directive_for_request(request);
@@ -1188,7 +1311,9 @@ impl Directive {
                     return Allowed;
                 }
                 let source_list = SourceList(&self.value);
-                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                if source_list.does_response_to_request_match_source_list(request, response)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1199,7 +1324,9 @@ impl Directive {
                     return Allowed;
                 }
                 let source_list = SourceList(&self.value);
-                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                if source_list.does_response_to_request_match_source_list(request, response)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1210,7 +1337,9 @@ impl Directive {
                     return Allowed;
                 }
                 let source_list = SourceList(&self.value);
-                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                if source_list.does_response_to_request_match_source_list(request, response)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1221,7 +1350,9 @@ impl Directive {
                     return Allowed;
                 }
                 let source_list = SourceList(&self.value);
-                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                if source_list.does_response_to_request_match_source_list(request, response)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1232,7 +1363,9 @@ impl Directive {
                     return Allowed;
                 }
                 let source_list = SourceList(&self.value);
-                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                if source_list.does_response_to_request_match_source_list(request, response)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1243,7 +1376,9 @@ impl Directive {
                     return Allowed;
                 }
                 let source_list = SourceList(&self.value);
-                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                if source_list.does_response_to_request_match_source_list(request, response)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1271,7 +1406,9 @@ impl Directive {
                 if source_list.does_nonce_match_source_list(&request.nonce) == Matches {
                     return Allowed;
                 }
-                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                if source_list.does_response_to_request_match_source_list(request, response)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1285,7 +1422,9 @@ impl Directive {
                 if source_list.does_nonce_match_source_list(&request.nonce) == Matches {
                     return Allowed;
                 }
-                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                if source_list.does_response_to_request_match_source_list(request, response)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1296,7 +1435,9 @@ impl Directive {
                     return Allowed;
                 }
                 let source_list = SourceList(&self.value);
-                if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+                if source_list.does_response_to_request_match_source_list(request, response)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1305,7 +1446,13 @@ impl Directive {
         }
     }
     /// https://www.w3.org/TR/CSP/#directive-inline-check
-    pub fn inline_check(&self, element: &Element, type_: InlineCheckType, policy: &Policy, source: &str) -> CheckResult {
+    pub fn inline_check(
+        &self,
+        element: &Element,
+        type_: InlineCheckType,
+        policy: &Policy,
+        source: &str,
+    ) -> CheckResult {
         use CheckResult::*;
         match &self.name[..] {
             "default-src" => {
@@ -1315,8 +1462,9 @@ impl Directive {
                 }
                 Directive {
                     name: name.to_owned(),
-                    value: self.value.clone()
-                }.inline_check(element, type_, policy, source)
+                    value: self.value.clone(),
+                }
+                .inline_check(element, type_, policy, source)
             }
             "script-src" => {
                 let name = get_the_effective_directive_for_inline_checks(type_);
@@ -1324,7 +1472,10 @@ impl Directive {
                     return Allowed;
                 }
                 let source_list = SourceList(&self.value);
-                if source_list.does_element_match_source_list_for_type_and_source(element, type_, source) == DoesNotMatch {
+                if source_list
+                    .does_element_match_source_list_for_type_and_source(element, type_, source)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1335,7 +1486,10 @@ impl Directive {
                     return Allowed;
                 }
                 let source_list = SourceList(&self.value);
-                if source_list.does_element_match_source_list_for_type_and_source(element, type_, source) == DoesNotMatch {
+                if source_list
+                    .does_element_match_source_list_for_type_and_source(element, type_, source)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1346,7 +1500,10 @@ impl Directive {
                     return Allowed;
                 }
                 let source_list = SourceList(&self.value);
-                if source_list.does_element_match_source_list_for_type_and_source(element, type_, source) == DoesNotMatch {
+                if source_list
+                    .does_element_match_source_list_for_type_and_source(element, type_, source)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1357,7 +1514,10 @@ impl Directive {
                     return Allowed;
                 }
                 let source_list = SourceList(&self.value);
-                if source_list.does_element_match_source_list_for_type_and_source(element, type_, source) == DoesNotMatch {
+                if source_list
+                    .does_element_match_source_list_for_type_and_source(element, type_, source)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1368,7 +1528,10 @@ impl Directive {
                     return Allowed;
                 }
                 let source_list = SourceList(&self.value);
-                if source_list.does_element_match_source_list_for_type_and_source(element, type_, source) == DoesNotMatch {
+                if source_list
+                    .does_element_match_source_list_for_type_and_source(element, type_, source)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
@@ -1379,16 +1542,22 @@ impl Directive {
                     return Allowed;
                 }
                 let source_list = SourceList(&self.value);
-                if source_list.does_element_match_source_list_for_type_and_source(element, type_, source) == DoesNotMatch {
+                if source_list
+                    .does_element_match_source_list_for_type_and_source(element, type_, source)
+                    == DoesNotMatch
+                {
                     return Blocked;
                 }
                 Allowed
             }
-            _ => Allowed
+            _ => Allowed,
         }
     }
     /// <https://html.spec.whatwg.org/multipage/#csp-derived-sandboxing-flags>
-    pub fn get_sandboxing_flag_set_for_document(&self, policy: &Policy) -> Option<SandboxingFlagSet> {
+    pub fn get_sandboxing_flag_set_for_document(
+        &self,
+        policy: &Policy,
+    ) -> Option<SandboxingFlagSet> {
         debug_assert!(&self.name[..] == "sandbox");
         // Step 2.1. If policy's disposition is not "enforce", then continue.
         if policy.disposition != PolicyDisposition::Enforce {
@@ -1400,9 +1569,14 @@ impl Directive {
     }
     /// <https://w3c.github.io/webappsec-csp/#directive-pre-navigation-check>
     pub fn pre_navigation_check<TrustedTypesUrlProcessor>(
-        &self, request: &mut Request, type_: NavigationCheckType, mut url_processor: TrustedTypesUrlProcessor, _policy: &Policy) -> CheckResult
+        &self,
+        request: &mut Request,
+        type_: NavigationCheckType,
+        mut url_processor: TrustedTypesUrlProcessor,
+        _policy: &Policy,
+    ) -> CheckResult
     where
-        TrustedTypesUrlProcessor: FnMut(&str) -> Option<String>
+        TrustedTypesUrlProcessor: FnMut(&str) -> Option<String>,
     {
         use CheckResult::*;
         match &self.name[..] {
@@ -1419,7 +1593,7 @@ impl Directive {
                 }
                 // Step 3: Return "Allowed".
                 Allowed
-            },
+            }
             // <https://www.w3.org/TR/trusted-types/#require-trusted-types-for-pre-navigation-check>
             "require-trusted-types-for" => {
                 let url = &request.url;
@@ -1479,12 +1653,18 @@ fn script_directives_prerequest_check(request: &Request, directive: &Directive) 
         }
         // Step 1.2. If the result of executing § 6.7.2.4 Does integrity metadata match source list? on
         // request’s integrity metadata and this directive’s value is "Matches", return "Allowed".
-        if source_list.does_integrity_metadata_match_source_list(&request.integrity_metadata) == Matches {
+        if source_list.does_integrity_metadata_match_source_list(&request.integrity_metadata)
+            == Matches
+        {
             return Allowed;
         }
         // Step 1.3. If directive’s value contains a source expression that is an
         // ASCII case-insensitive match for the "'strict-dynamic'" keyword-source:
-        if directive.value.iter().any(|ex| ascii_case_insensitive_match(ex, "'strict-dynamic'")) {
+        if directive
+            .value
+            .iter()
+            .any(|ex| ascii_case_insensitive_match(ex, "'strict-dynamic'"))
+        {
             // Step 1.3.1. If the request’s parser metadata is "parser-inserted", return "Blocked".
             if request.parser_metadata == ParserMetadata::ParserInserted {
                 return Blocked;
@@ -1504,7 +1684,11 @@ fn script_directives_prerequest_check(request: &Request, directive: &Directive) 
 }
 
 /// https://www.w3.org/TR/CSP/#script-post-request
-fn script_directives_postrequest_check(request: &Request, response: &Response, directive: &Directive) -> CheckResult {
+fn script_directives_postrequest_check(
+    request: &Request,
+    response: &Response,
+    directive: &Directive,
+) -> CheckResult {
     use CheckResult::*;
     // Step 1. If request’s destination is script-like:
     if request_is_script_like(request) {
@@ -1518,11 +1702,17 @@ fn script_directives_postrequest_check(request: &Request, response: &Response, d
         }
         // Step 1.3. If the result of executing § 6.7.2.4 Does integrity metadata match source list? on
         // request’s integrity metadata and this directive’s value is "Matches", return "Allowed".
-        if source_list.does_integrity_metadata_match_source_list(&request.integrity_metadata) == Matches {
+        if source_list.does_integrity_metadata_match_source_list(&request.integrity_metadata)
+            == Matches
+        {
             return Allowed;
         }
         // Step 1.4. If directive’s value contains "'strict-dynamic'":
-        if directive.value.iter().any(|ex| ascii_case_insensitive_match(ex, "'strict-dynamic'")) {
+        if directive
+            .value
+            .iter()
+            .any(|ex| ascii_case_insensitive_match(ex, "'strict-dynamic'"))
+        {
             // Step 1.4.1. If the request’s parser metadata is "parser-inserted", return "Blocked".
             if request.parser_metadata == ParserMetadata::ParserInserted {
                 return Blocked;
@@ -1532,7 +1722,8 @@ fn script_directives_postrequest_check(request: &Request, response: &Response, d
         }
         // Step 1.5. If the result of executing § 6.7.2.6 Does response to request match source list? on
         // response, request, directive’s value, and policy, is "Does Not Match", return "Blocked".
-        if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch {
+        if source_list.does_response_to_request_match_source_list(request, response) == DoesNotMatch
+        {
             return Blocked;
         }
     }
@@ -1546,7 +1737,11 @@ fn request_is_script_like(request: &Request) -> bool {
 }
 
 /// https://www.w3.org/TR/CSP/#should-directive-execute
-fn should_fetch_directive_execute(effective_directive_name: &str, directive_name: &str, policy: &Policy) -> bool {
+fn should_fetch_directive_execute(
+    effective_directive_name: &str,
+    directive_name: &str,
+    policy: &Policy,
+) -> bool {
     let directive_fallback_list = get_fetch_directive_fallback_list(effective_directive_name);
     for fallback_directive in directive_fallback_list {
         if directive_name == *fallback_directive {
@@ -1564,24 +1759,24 @@ fn get_fetch_directive_fallback_list(directive_name: &str) -> &'static [&'static
     match directive_name {
         "script-src-elem" => &["script-src-elem", "script-src", "default-src"],
         "script-src-attr" => &["script-src-attr", "script-src", "default-src"],
-        "style-src-elem"  => &["style-src-elem", "style-src", "default-src"],
-        "style-src-attr"  => &["style-src-attr", "style-src", "default-src"],
-        "worker-src"      => &["worker-src", "child-src", "script-src", "default-src"],
-        "connect-src"     => &["connect-src", "default-src"],
-        "manifest-src"    => &["manifest-src", "default-src"],
-        "object-src"      => &["object-src", "default-src"],
-        "frame-src"       => &["frame-src", "child-src", "default-src"],
-        "media-src"       => &["media-src", "default-src"],
-        "font-src"        => &["font-src", "default-src"],
-        "img-src"         => &["img-src", "default-src"],
-        _                 => &[],
+        "style-src-elem" => &["style-src-elem", "style-src", "default-src"],
+        "style-src-attr" => &["style-src-attr", "style-src", "default-src"],
+        "worker-src" => &["worker-src", "child-src", "script-src", "default-src"],
+        "connect-src" => &["connect-src", "default-src"],
+        "manifest-src" => &["manifest-src", "default-src"],
+        "object-src" => &["object-src", "default-src"],
+        "frame-src" => &["frame-src", "child-src", "default-src"],
+        "media-src" => &["media-src", "default-src"],
+        "font-src" => &["font-src", "default-src"],
+        "img-src" => &["img-src", "default-src"],
+        _ => &[],
     }
 }
 
 /// https://www.w3.org/TR/CSP/#effective-directive-for-a-request
 fn get_the_effective_directive_for_request(request: &Request) -> &'static str {
-    use Initiator::*;
     use Destination::*;
+    use Initiator::*;
     // Step 1: If request’s initiator is "prefetch" or "prerender", return default-src.
     if request.initiator == Prefetch || request.initiator == Prerender {
         return "default-src";
@@ -1612,34 +1807,37 @@ pub enum MatchResult {
 }
 
 /// https://www.w3.org/TR/CSP/#grammardef-directive-name
-static DIRECTIVE_NAME_GRAMMAR: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"^[0-9a-z\-]+$"#).unwrap());
+static DIRECTIVE_NAME_GRAMMAR: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^[0-9a-z\-]+$"#).unwrap());
 /// https://www.w3.org/TR/CSP/#grammardef-directive-value
 static DIRECTIVE_VALUE_TOKEN_GRAMMAR: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"^[\u{21}-\u{2B}\u{2D}-\u{3A}\u{3C}-\u{7E}]+$"#).unwrap());
 /// https://www.w3.org/TR/CSP/#grammardef-nonce-source
 static NONCE_SOURCE_GRAMMAR: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"^'nonce-(?P<n>[a-zA-Z0-9\+/\-_]+=*)'$"#).unwrap());
-static NONE_SOURCE_GRAMMAR: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"^'none'$"#).unwrap());
+static NONE_SOURCE_GRAMMAR: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^'none'$"#).unwrap());
 /// https://www.w3.org/TR/CSP/#grammardef-scheme-source
 static SCHEME_SOURCE_GRAMMAR: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"^(?P<scheme>[a-zA-Z][a-zA-Z0-9\+\-\.]*):$"#).unwrap());
 /// https://www.w3.org/TR/CSP/#grammardef-host-source
-static HOST_SOURCE_GRAMMAR: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"^((?P<scheme>[a-zA-Z][a-zA-Z0-9\+\-\.]*)://)?(?P<host>\*|(\*\.)?[a-zA-Z0-9\-]+(\.[a-zA-Z0-9\-]+)*)(?P<port>:(\*|[0-9]+))?(?P<path>/([:@%!\$&'\(\)\*\+,;=0-9a-zA-Z\-\._~]+)?(/[:@%!\$&'\(\)\*\+,;=0-9a-zA-Z\-\._~]*)*)?$"#).unwrap());
+static HOST_SOURCE_GRAMMAR: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"^((?P<scheme>[a-zA-Z][a-zA-Z0-9\+\-\.]*)://)?(?P<host>\*|(\*\.)?[a-zA-Z0-9\-]+(\.[a-zA-Z0-9\-]+)*)(?P<port>:(\*|[0-9]+))?(?P<path>/([:@%!\$&'\(\)\*\+,;=0-9a-zA-Z\-\._~]+)?(/[:@%!\$&'\(\)\*\+,;=0-9a-zA-Z\-\._~]*)*)?$"#).unwrap()
+});
 /// https://www.w3.org/TR/CSP/#grammardef-hash-source
-static HASH_SOURCE_GRAMMAR: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"^'(?P<algorithm>[sS][hH][aA](256|384|512))-(?P<value>[a-zA-Z0-9\+/\-_]+=*)'$"#).unwrap());
+static HASH_SOURCE_GRAMMAR: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"^'(?P<algorithm>[sS][hH][aA](256|384|512))-(?P<value>[a-zA-Z0-9\+/\-_]+=*)'$"#)
+        .unwrap()
+});
 
 /// https://www.w3.org/TR/CSP/#framework-directive-source-list
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct SourceList<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>>(I);
+struct SourceList<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item = &'a U>>(I);
 
-impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> SourceList<'a, U, I> {
+impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item = &'a U>> SourceList<'a, U, I> {
     /// https://www.w3.org/TR/CSP/#match-nonce-to-source-list
     fn does_nonce_match_source_list(&self, nonce: &str) -> MatchResult {
-        if nonce.is_empty() { return DoesNotMatch };
+        if nonce.is_empty() {
+            return DoesNotMatch;
+        };
         for expression in self.0.clone().into_iter() {
             if let Some(captures) = NONCE_SOURCE_GRAMMAR.captures(expression.borrow()) {
                 if let Some(captured_nonce) = captures.name("n") {
@@ -1654,11 +1852,22 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
     /// https://www.w3.org/TR/CSP/#match-integrity-metadata-to-source-list
     fn does_integrity_metadata_match_source_list(&self, integrity_metadata: &str) -> MatchResult {
         // Step 2: Let integrity expressions be the set of source expressions in source list that match the hash-source grammar.
-        let integrity_expressions: Vec<HashFunction> = self.0.clone().into_iter()
+        let integrity_expressions: Vec<HashFunction> = self
+            .0
+            .clone()
+            .into_iter()
             .filter_map(|expression| {
                 if let Some(captures) = HASH_SOURCE_GRAMMAR.captures(expression.borrow()) {
-                    if let (Some(algorithm), Some(value)) = (captures.name("algorithm").and_then(|a| HashAlgorithm::from_name(a.as_str())), captures.name("value")) {
-                        return Some(HashFunction{ algorithm, value: String::from(value.as_str()) });
+                    if let (Some(algorithm), Some(value)) = (
+                        captures
+                            .name("algorithm")
+                            .and_then(|a| HashAlgorithm::from_name(a.as_str())),
+                        captures.name("value"),
+                    ) {
+                        return Some(HashFunction {
+                            algorithm,
+                            value: String::from(value.as_str()),
+                        });
                     }
                 }
                 None
@@ -1710,12 +1919,14 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
         redirect_count: u32,
     ) -> MatchResult {
         for expression in self.0.clone().into_iter().map(Borrow::borrow) {
-            if NONE_SOURCE_GRAMMAR.is_match(expression) { continue };
+            if NONE_SOURCE_GRAMMAR.is_match(expression) {
+                continue;
+            };
             let result = does_url_match_expression_in_origin_with_redirect_count(
                 url,
                 expression,
                 origin,
-                redirect_count
+                redirect_count,
             );
             if result == Matches {
                 return Matches;
@@ -1730,7 +1941,8 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
         type_: InlineCheckType,
         source: &str,
     ) -> MatchResult {
-        if self.does_a_source_list_allow_all_inline_behavior_for_type(type_) == AllowResult::Allows {
+        if self.does_a_source_list_allow_all_inline_behavior_for_type(type_) == AllowResult::Allows
+        {
             return Matches;
         }
         if type_ == InlineCheckType::Script || type_ == InlineCheckType::Style {
@@ -1756,7 +1968,12 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
         if type_ == InlineCheckType::Script || type_ == InlineCheckType::Style || unsafe_hashes {
             for expression in self.0.clone().into_iter().map(Borrow::borrow) {
                 if let Some(captures) = HASH_SOURCE_GRAMMAR.captures(expression) {
-                    if let (Some(algorithm), Some(value)) = (captures.name("algorithm").and_then(|a| HashAlgorithm::from_name(a.as_str())), captures.name("value")) {
+                    if let (Some(algorithm), Some(value)) = (
+                        captures
+                            .name("algorithm")
+                            .and_then(|a| HashAlgorithm::from_name(a.as_str())),
+                        captures.name("value"),
+                    ) {
                         let actual = algorithm.apply(source);
                         let expected = value.as_str().replace('-', "+").replace('_', "/");
                         if actual == expected {
@@ -1769,14 +1986,20 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
         DoesNotMatch
     }
     /// https://www.w3.org/TR/CSP/#allow-all-inline
-    fn does_a_source_list_allow_all_inline_behavior_for_type(&self, type_: InlineCheckType) -> AllowResult {
+    fn does_a_source_list_allow_all_inline_behavior_for_type(
+        &self,
+        type_: InlineCheckType,
+    ) -> AllowResult {
         use InlineCheckType::*;
         let mut allow_all_inline = false;
         for expression in self.0.clone().into_iter().map(Borrow::borrow) {
-            if HASH_SOURCE_GRAMMAR.is_match(expression) || NONCE_SOURCE_GRAMMAR.is_match(expression) {
+            if HASH_SOURCE_GRAMMAR.is_match(expression) || NONCE_SOURCE_GRAMMAR.is_match(expression)
+            {
                 return AllowResult::DoesNotAllow;
             }
-            if (type_ == Script || type_ == ScriptAttribute || type_ == Navigation) && expression == "'strict-dynamic'" {
+            if (type_ == Script || type_ == ScriptAttribute || type_ == Navigation)
+                && expression == "'strict-dynamic'"
+            {
                 return AllowResult::DoesNotAllow;
             }
             if ascii_case_insensitive_match(expression, "'unsafe-inline'") {
@@ -1793,7 +2016,8 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
     fn does_response_to_request_match_source_list(
         &self,
         request: &Request,
-        response: &Response) -> MatchResult {
+        response: &Response,
+    ) -> MatchResult {
         self.does_url_match_source_list_in_origin_with_redirect_count(
             &response.url,
             &request.origin,
@@ -1814,8 +2038,9 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item=&'a U>> Sour
     /// https://www.w3.org/TR/CSP/#can-compile-wasm-bytes
     fn does_a_source_list_allow_wasm_evaluation(&self) -> AllowResult {
         for expression in self.0.clone().into_iter().map(Borrow::borrow) {
-            if ascii_case_insensitive_match(expression, "'unsafe-eval'") ||
-                ascii_case_insensitive_match(expression, "'wasm-unsafe-eval'") {
+            if ascii_case_insensitive_match(expression, "'unsafe-eval'")
+                || ascii_case_insensitive_match(expression, "'wasm-unsafe-eval'")
+            {
                 return AllowResult::Allows;
             }
         }
@@ -1865,8 +2090,7 @@ fn does_url_match_expression_in_origin_with_redirect_count(
         } else {
             return DoesNotMatch;
         };
-        if !expr_has_scheme_part &&
-            origin_scheme_part_match(origin, url.scheme()) != Matches {
+        if !expr_has_scheme_part && origin_scheme_part_match(origin, url.scheme()) != Matches {
             return DoesNotMatch;
         }
         if let Some(expression_host) = captures.name("host") {
@@ -1882,7 +2106,10 @@ fn does_url_match_expression_in_origin_with_redirect_count(
         if port_part_match(port_part, url) != Matches {
             return DoesNotMatch;
         }
-        let path_part = captures.name("path").map(|path_part| path_part.as_str()).unwrap_or("");
+        let path_part = captures
+            .name("path")
+            .map(|path_part| path_part.as_str())
+            .unwrap_or("");
         if path_part != "/" && redirect_count == 0 {
             let path = url.path();
             if path_part_match(path_part, path) != Matches {
@@ -1899,13 +2126,15 @@ fn does_url_match_expression_in_origin_with_redirect_count(
             let hosts_are_the_same = Some(host) == url.host().map(|p| p.to_owned()).as_ref();
             let ports_are_the_same = Some(*port) == url.port();
             let origins_port_is_default_for_scheme = Some(*port) == default_port(scheme);
-            let url_port_is_default_port_for_scheme = url.port() == default_port(scheme)
-                && default_port(scheme).is_some();
-            let ports_are_default = url_port_is_default_port_for_scheme && origins_port_is_default_for_scheme;
+            let url_port_is_default_port_for_scheme =
+                url.port() == default_port(scheme) && default_port(scheme).is_some();
+            let ports_are_default =
+                url_port_is_default_port_for_scheme && origins_port_is_default_for_scheme;
             if hosts_are_the_same
                 && (ports_are_the_same || ports_are_default)
                 && ((url_scheme == "https" || url_scheme == "wss")
-                        || (scheme == "http" && (url_scheme == "http" || url_scheme == "ws"))) {
+                    || (scheme == "http" && (url_scheme == "http" || url_scheme == "ws")))
+            {
                 return Matches;
             }
         }
@@ -1932,7 +2161,7 @@ fn host_part_match(pattern: &str, host: &str) -> MatchResult {
             if remaining_pattern.len() > host.len() {
                 return DoesNotMatch;
             }
-            let remaining_host = &host[(host.len()-remaining_pattern.len())..];
+            let remaining_host = &host[(host.len() - remaining_pattern.len())..];
             debug_assert_eq!(remaining_host.len(), remaining_pattern.len());
             // Step 3.2. If host to ASCII lowercase ends with remaining, then return "Matches".
             if ascii_case_insensitive_match(remaining_pattern, remaining_host) {
@@ -1946,8 +2175,9 @@ fn host_part_match(pattern: &str, host: &str) -> MatchResult {
     if !ascii_case_insensitive_match(pattern, host) {
         return DoesNotMatch;
     }
-    static IPV4_ADDRESS_RULE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r#"([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])"#).unwrap());
+    static IPV4_ADDRESS_RULE: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r#"([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])"#).unwrap()
+    });
     if IPV4_ADDRESS_RULE.is_match(pattern) && pattern != "127.0.0.1" {
         return DoesNotMatch;
     }
@@ -2001,7 +2231,7 @@ fn path_part_match(path_a: &str, path_b: &str) -> MatchResult {
     if path_a == "/" && path_b.is_empty() {
         return Matches;
     }
-    let exact_match = path_a.as_bytes()[path_a.len()-1] != b'/';
+    let exact_match = path_a.as_bytes()[path_a.len() - 1] != b'/';
     let (mut path_list_a, path_list_b): (Vec<&str>, Vec<&str>) =
         (path_a.split('/').collect(), path_b.split('/').collect());
     if path_list_a.len() > path_list_b.len() {
@@ -2011,7 +2241,7 @@ fn path_part_match(path_a: &str, path_b: &str) -> MatchResult {
         return DoesNotMatch;
     }
     if !exact_match {
-        debug_assert_eq!(path_list_a[path_list_a.len()-1], "");
+        debug_assert_eq!(path_list_a[path_list_a.len() - 1], "");
         path_list_a.pop();
     }
     let mut piece_b_iter = path_list_b.iter();
@@ -2052,9 +2282,7 @@ fn scheme_part_match(a: &str, b: &str) -> MatchResult {
     let b = b.to_ascii_lowercase();
     match (&a[..], &b[..]) {
         _ if a == b => Matches,
-        ("http", "https") |
-        ("ws", "wss") |
-        ("wss", "https") => Matches,
+        ("http", "https") | ("ws", "wss") | ("wss", "https") => Matches,
         _ => DoesNotMatch,
     }
 }
@@ -2070,9 +2298,12 @@ impl HashAlgorithm {
     pub fn from_name(name: &str) -> Option<HashAlgorithm> {
         use HashAlgorithm::*;
         match name {
-            "sha256" | "Sha256" | "sHa256" | "shA256" | "SHa256" | "ShA256" | "sHA256" | "SHA256" => Some(Sha256),
-            "sha384" | "Sha384" | "sHa384" | "shA384" | "SHa384" | "ShA384" | "sHA384" | "SHA384" => Some(Sha384),
-            "sha512" | "Sha512" | "sHa512" | "shA512" | "SHa512" | "ShA512" | "sHA512" | "SHA512" => Some(Sha512),
+            "sha256" | "Sha256" | "sHa256" | "shA256" | "SHa256" | "ShA256" | "sHA256"
+            | "SHA256" => Some(Sha256),
+            "sha384" | "Sha384" | "sHa384" | "shA384" | "SHa384" | "ShA384" | "sHA384"
+            | "SHA384" => Some(Sha384),
+            "sha512" | "Sha512" | "sHa512" | "shA512" | "SHa512" | "ShA512" | "sHA512"
+            | "SHA512" => Some(Sha512),
             _ => None,
         }
     }
@@ -2100,13 +2331,15 @@ pub struct HashFunction {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SubresourceIntegrityMetadata {
     NoMetadata,
-    IntegritySources(Vec<HashFunction>)
+    IntegritySources(Vec<HashFunction>),
 }
 
 /// https://www.w3.org/TR/SRI/#the-integrity-attribute
 /// This corresponds to the "hash-expression" grammar.
-static SUBRESOURCE_METADATA_GRAMMAR: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"(?P<algorithm>[sS][hH][aA](256|384|512))-(?P<value>[a-zA-Z0-9\+/\-_]+=*)"#).unwrap());
+static SUBRESOURCE_METADATA_GRAMMAR: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?P<algorithm>[sS][hH][aA](256|384|512))-(?P<value>[a-zA-Z0-9\+/\-_]+=*)"#)
+        .unwrap()
+});
 
 /// https://www.w3.org/TR/SRI/#parse-metadata
 pub fn parse_subresource_integrity_metadata(string: &str) -> SubresourceIntegrityMetadata {
@@ -2115,8 +2348,16 @@ pub fn parse_subresource_integrity_metadata(string: &str) -> SubresourceIntegrit
     for token in split_ascii_whitespace(string) {
         empty = false;
         if let Some(captures) = SUBRESOURCE_METADATA_GRAMMAR.captures(token) {
-            if let (Some(algorithm), Some(value)) = (captures.name("algorithm").and_then(|a| HashAlgorithm::from_name(a.as_str())), captures.name("value")) {
-                result.push(HashFunction{ algorithm, value: String::from(value.as_str()) });
+            if let (Some(algorithm), Some(value)) = (
+                captures
+                    .name("algorithm")
+                    .and_then(|a| HashAlgorithm::from_name(a.as_str())),
+                captures.name("value"),
+            ) {
+                result.push(HashFunction {
+                    algorithm,
+                    value: String::from(value.as_str()),
+                });
             }
         }
     }
@@ -2153,7 +2394,11 @@ mod test {
     }
     #[test]
     pub fn basic_policy_is_valid() {
-        let p = Policy::parse("script-src notriddle.com", PolicySource::Header, PolicyDisposition::Enforce);
+        let p = Policy::parse(
+            "script-src notriddle.com",
+            PolicySource::Header,
+            PolicyDisposition::Enforce,
+        );
         assert!(p.is_valid());
     }
     #[test]
@@ -2170,7 +2415,11 @@ mod test {
     pub fn prefetch_request_does_not_violate_policy() {
         let request = Request {
             url: Url::parse("https://www.notriddle.com/script.js").unwrap(),
-            origin: Origin::Tuple("https".to_string(), url::Host::Domain("notriddle.com".to_owned()), 443),
+            origin: Origin::Tuple(
+                "https".to_string(),
+                url::Host::Domain("notriddle.com".to_owned()),
+                443,
+            ),
             redirect_count: 0,
             destination: Destination::Script,
             initiator: Initiator::Prefetch,
@@ -2179,7 +2428,11 @@ mod test {
             parser_metadata: ParserMetadata::None,
         };
 
-        let p = Policy::parse("child-src 'self'", PolicySource::Header, PolicyDisposition::Enforce);
+        let p = Policy::parse(
+            "child-src 'self'",
+            PolicySource::Header,
+            PolicyDisposition::Enforce,
+        );
 
         let violation_result = p.does_request_violate_policy(&request);
 
@@ -2190,7 +2443,11 @@ mod test {
     pub fn prefetch_request_violates_policy() {
         let request = Request {
             url: Url::parse("https://www.notriddle.com/script.js").unwrap(),
-            origin: Origin::Tuple("https".to_string(), url::Host::Domain("notriddle.com".to_owned()), 443),
+            origin: Origin::Tuple(
+                "https".to_string(),
+                url::Host::Domain("notriddle.com".to_owned()),
+                443,
+            ),
             redirect_count: 0,
             destination: Destination::ServiceWorker,
             initiator: Initiator::None,
@@ -2199,11 +2456,18 @@ mod test {
             parser_metadata: ParserMetadata::None,
         };
 
-        let p = Policy::parse("default-src 'none'; script-src 'self' ", PolicySource::Header, PolicyDisposition::Enforce);
+        let p = Policy::parse(
+            "default-src 'none'; script-src 'self' ",
+            PolicySource::Header,
+            PolicyDisposition::Enforce,
+        );
 
         let violation_result = p.does_request_violate_policy(&request);
 
-        let expected_result = Violates::Directive(Directive { name: String::from("script-src"), value: vec![String::from("'self'")] });
+        let expected_result = Violates::Directive(Directive {
+            name: String::from("script-src"),
+            value: vec![String::from("'self'")],
+        });
 
         assert!(violation_result == expected_result);
     }
@@ -2212,7 +2476,11 @@ mod test {
     pub fn prefetch_request_is_allowed_by_directive() {
         let request = Request {
             url: Url::parse("https://www.notriddle.com/script.js").unwrap(),
-            origin: Origin::Tuple("https".to_string(), url::Host::Domain("notriddle.com".to_owned()), 443),
+            origin: Origin::Tuple(
+                "https".to_string(),
+                url::Host::Domain("notriddle.com".to_owned()),
+                443,
+            ),
             redirect_count: 0,
             destination: Destination::Script,
             initiator: Initiator::Prefetch,
@@ -2221,7 +2489,11 @@ mod test {
             parser_metadata: ParserMetadata::None,
         };
 
-        let p = Policy::parse("default-src 'none'; child-src 'self'", PolicySource::Header, PolicyDisposition::Enforce);
+        let p = Policy::parse(
+            "default-src 'none'; child-src 'self'",
+            PolicySource::Header,
+            PolicyDisposition::Enforce,
+        );
 
         let violation_result = p.does_request_violate_policy(&request);
 
@@ -2230,113 +2502,179 @@ mod test {
 
     #[test]
     pub fn trusted_type_policy_is_valid() {
-        let p = Policy::parse("trusted-types 'none'", PolicySource::Meta, PolicyDisposition::Enforce);
+        let p = Policy::parse(
+            "trusted-types 'none'",
+            PolicySource::Meta,
+            PolicyDisposition::Enforce,
+        );
         assert!(p.is_valid());
         assert_eq!(p.directive_set[0].value, vec!["'none'".to_owned()]);
     }
 
     #[test]
     pub fn csp_list_is_valid() {
-        let csp_list = CspList::parse("default-src 'none'; child-src 'self', trusted-types 'none'", PolicySource::Meta, PolicyDisposition::Enforce);
+        let csp_list = CspList::parse(
+            "default-src 'none'; child-src 'self', trusted-types 'none'",
+            PolicySource::Meta,
+            PolicyDisposition::Enforce,
+        );
         assert!(csp_list.is_valid());
-        assert_eq!(csp_list.0[1].directive_set[0].value, vec!["'none'".to_owned()]);
+        assert_eq!(
+            csp_list.0[1].directive_set[0].value,
+            vec!["'none'".to_owned()]
+        );
     }
 
     #[test]
     pub fn no_trusted_types_specified_allows_all_policies() {
-        let csp_list = CspList::parse("default-src 'none'; child-src 'self'", PolicySource::Meta, PolicyDisposition::Enforce);
+        let csp_list = CspList::parse(
+            "default-src 'none'; child-src 'self'",
+            PolicySource::Meta,
+            PolicyDisposition::Enforce,
+        );
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy", &[]);
+        let (check_result, violations) =
+            csp_list.is_trusted_type_policy_creation_allowed("MyPolicy", &[]);
         assert_eq!(check_result, CheckResult::Allowed);
         assert!(violations.is_empty());
     }
 
     #[test]
     pub fn none_does_not_allow_for_any_policy() {
-        let csp_list = CspList::parse("trusted-types 'none'", PolicySource::Meta, PolicyDisposition::Enforce);
+        let csp_list = CspList::parse(
+            "trusted-types 'none'",
+            PolicySource::Meta,
+            PolicyDisposition::Enforce,
+        );
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("some-policy", &[]);
+        let (check_result, violations) =
+            csp_list.is_trusted_type_policy_creation_allowed("some-policy", &[]);
         assert!(check_result == CheckResult::Blocked);
         assert_eq!(violations.len(), 1);
     }
 
     #[test]
     pub fn extra_none_allows_all_policies() {
-        let csp_list = CspList::parse("trusted-types some-policy 'none'", PolicySource::Meta, PolicyDisposition::Enforce);
+        let csp_list = CspList::parse(
+            "trusted-types some-policy 'none'",
+            PolicySource::Meta,
+            PolicyDisposition::Enforce,
+        );
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("some-policy", &[]);
+        let (check_result, violations) =
+            csp_list.is_trusted_type_policy_creation_allowed("some-policy", &[]);
         assert!(check_result == CheckResult::Allowed);
         assert!(violations.is_empty());
     }
 
     #[test]
     pub fn explicit_policy_named_is_allowed() {
-        let csp_list = CspList::parse("trusted-types MyPolicy", PolicySource::Meta, PolicyDisposition::Enforce);
+        let csp_list = CspList::parse(
+            "trusted-types MyPolicy",
+            PolicySource::Meta,
+            PolicyDisposition::Enforce,
+        );
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy", &[]);
+        let (check_result, violations) =
+            csp_list.is_trusted_type_policy_creation_allowed("MyPolicy", &[]);
         assert_eq!(check_result, CheckResult::Allowed);
         assert!(violations.is_empty());
     }
 
     #[test]
     pub fn other_policy_name_is_blocked() {
-        let csp_list = CspList::parse("trusted-types MyPolicy", PolicySource::Meta, PolicyDisposition::Enforce);
+        let csp_list = CspList::parse(
+            "trusted-types MyPolicy",
+            PolicySource::Meta,
+            PolicyDisposition::Enforce,
+        );
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyOtherPolicy", &[]);
+        let (check_result, violations) =
+            csp_list.is_trusted_type_policy_creation_allowed("MyOtherPolicy", &[]);
         assert!(check_result == CheckResult::Blocked);
         assert_eq!(violations.len(), 1);
     }
 
     #[test]
     pub fn invalid_characters_in_policy_name_is_blocked() {
-        let csp_list = CspList::parse("trusted-types My?Policy", PolicySource::Meta, PolicyDisposition::Enforce);
+        let csp_list = CspList::parse(
+            "trusted-types My?Policy",
+            PolicySource::Meta,
+            PolicyDisposition::Enforce,
+        );
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("My?Policy", &["My?Policy"]);
+        let (check_result, violations) =
+            csp_list.is_trusted_type_policy_creation_allowed("My?Policy", &["My?Policy"]);
         assert!(check_result == CheckResult::Blocked);
         assert_eq!(violations.len(), 1);
     }
 
     #[test]
     pub fn already_created_policy_is_blocked() {
-        let csp_list = CspList::parse("trusted-types MyPolicy", PolicySource::Meta, PolicyDisposition::Enforce);
+        let csp_list = CspList::parse(
+            "trusted-types MyPolicy",
+            PolicySource::Meta,
+            PolicyDisposition::Enforce,
+        );
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy", &["MyPolicy"]);
+        let (check_result, violations) =
+            csp_list.is_trusted_type_policy_creation_allowed("MyPolicy", &["MyPolicy"]);
         assert!(check_result == CheckResult::Blocked);
         assert_eq!(violations.len(), 1);
     }
 
     #[test]
     pub fn already_created_policy_is_allowed_with_allow_duplicates() {
-        let csp_list = CspList::parse("trusted-types MyPolicy 'allow-duplicates'", PolicySource::Meta, PolicyDisposition::Enforce);
+        let csp_list = CspList::parse(
+            "trusted-types MyPolicy 'allow-duplicates'",
+            PolicySource::Meta,
+            PolicyDisposition::Enforce,
+        );
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy", &["MyPolicy"]);
+        let (check_result, violations) =
+            csp_list.is_trusted_type_policy_creation_allowed("MyPolicy", &["MyPolicy"]);
         assert!(check_result == CheckResult::Allowed);
         assert!(violations.is_empty());
     }
 
     #[test]
     pub fn only_report_policy_issues_for_disposition_report() {
-        let csp_list = CspList::parse("trusted-types MyPolicy", PolicySource::Meta, PolicyDisposition::Report);
+        let csp_list = CspList::parse(
+            "trusted-types MyPolicy",
+            PolicySource::Meta,
+            PolicyDisposition::Report,
+        );
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy", &["MyPolicy"]);
+        let (check_result, violations) =
+            csp_list.is_trusted_type_policy_creation_allowed("MyPolicy", &["MyPolicy"]);
         assert!(check_result == CheckResult::Allowed);
         assert_eq!(violations.len(), 1);
     }
 
     #[test]
     pub fn wildcard_allows_all_policies() {
-        let csp_list = CspList::parse("trusted-types *", PolicySource::Meta, PolicyDisposition::Report);
+        let csp_list = CspList::parse(
+            "trusted-types *",
+            PolicySource::Meta,
+            PolicyDisposition::Report,
+        );
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyPolicy", &[]);
+        let (check_result, violations) =
+            csp_list.is_trusted_type_policy_creation_allowed("MyPolicy", &[]);
         assert!(check_result == CheckResult::Allowed);
         assert!(violations.is_empty());
     }
 
     #[test]
     pub fn violation_has_correct_directive() {
-        let csp_list = CspList::parse("trusted-types MyPolicy", PolicySource::Meta, PolicyDisposition::Enforce);
+        let csp_list = CspList::parse(
+            "trusted-types MyPolicy",
+            PolicySource::Meta,
+            PolicyDisposition::Enforce,
+        );
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("MyOtherPolicy", &[]);
+        let (check_result, violations) =
+            csp_list.is_trusted_type_policy_creation_allowed("MyOtherPolicy", &[]);
         assert!(check_result == CheckResult::Blocked);
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].directive, csp_list.0[0].directive_set[0]);
@@ -2344,11 +2682,20 @@ mod test {
 
     #[test]
     pub fn long_policy_name_is_truncated() {
-        let csp_list = CspList::parse("trusted-types MyPolicy", PolicySource::Meta, PolicyDisposition::Enforce);
+        let csp_list = CspList::parse(
+            "trusted-types MyPolicy",
+            PolicySource::Meta,
+            PolicyDisposition::Enforce,
+        );
         assert!(csp_list.is_valid());
-        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed("SuperLongPolicyNameThatExceeds40Characters", &[]);
+        let (check_result, violations) = csp_list.is_trusted_type_policy_creation_allowed(
+            "SuperLongPolicyNameThatExceeds40Characters",
+            &[],
+        );
         assert!(check_result == CheckResult::Blocked);
         assert_eq!(violations.len(), 1);
-        assert!(matches!(&violations[0].resource, ViolationResource::TrustedTypePolicy { sample } if sample == "SuperLongPolicyNameThatExceeds40Characte"));
+        assert!(
+            matches!(&violations[0].resource, ViolationResource::TrustedTypePolicy { sample } if sample == "SuperLongPolicyNameThatExceeds40Characte")
+        );
     }
 }
