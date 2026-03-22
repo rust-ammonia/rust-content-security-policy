@@ -10,6 +10,7 @@ fn main() {
     let csp_list = CspList::parse("script-src *.notriddle.com", PolicySource::Header, PolicyDisposition::Enforce);
     let (check_result, _) = csp_list.should_request_be_blocked(&Request {
         url: Url::parse("https://www.notriddle.com/script.js").unwrap(),
+        current_url: Url::parse("https://www.notriddle.com/script.js").unwrap(),
         origin: Origin::Tuple("https".to_string(), url::Host::Domain("notriddle.com".to_owned()), 443),
         redirect_count: 0,
         destination: Destination::Script,
@@ -21,6 +22,7 @@ fn main() {
     assert_eq!(check_result, CheckResult::Allowed);
     let (check_result, _) = csp_list.should_request_be_blocked(&Request {
         url: Url::parse("https://www.evil.example/script.js").unwrap(),
+        current_url: Url::parse("https://www.evil.example/script.js").unwrap(),
         origin: Origin::Tuple("https".to_string(), url::Host::Domain("notriddle.com".to_owned()), 443),
         redirect_count: 0,
         destination: Destination::Script,
@@ -768,7 +770,7 @@ impl CspList {
             }
         }
         // Step 3: If result is "Allowed", and if navigation request’s current URL’s scheme is javascript:
-        if result == CheckResult::Allowed && request.url.scheme() == "javascript" {
+        if result == CheckResult::Allowed && request.current_url.scheme() == "javascript" {
             // Step 3.1: For each policy of navigation request’s policy container’s CSP list:
             for policy in &self.0 {
                 // Step 3.1.1: For each directive of policy:
@@ -779,7 +781,7 @@ impl CspList {
                         &Element { nonce: None },
                         InlineCheckType::Navigation,
                         policy,
-                        request.url.as_str(),
+                        request.current_url.as_str(),
                     ) == CheckResult::Allowed
                     {
                         continue;
@@ -855,6 +857,7 @@ https://fetch.spec.whatwg.org/#concept-request
 #[derive(Clone, Debug)]
 pub struct Request {
     pub url: Url,
+    pub current_url: Url,
     pub origin: Origin,
     pub redirect_count: u32,
     pub destination: Destination,
@@ -1016,7 +1019,7 @@ violation information
 
 https://www.w3.org/TR/CSP/#violation
 */
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum ViolationResource {
     Url(Url),
@@ -1905,8 +1908,12 @@ impl<'a, U: 'a + ?Sized + Borrow<str>, I: Clone + IntoIterator<Item = &'a U>> So
     }
     /// https://www.w3.org/TR/CSP/#match-request-to-source-list
     fn does_request_match_source_list(&self, request: &Request) -> MatchResult {
+        // > Given a request request, a source list source list, and an origin self-origin,
+        // > this algorithm returns the result of executing
+        // > § 6.7.2.7 Does url match source list in origin with redirect count?
+        // > on request’s current url, source list, self-origin, and request’s redirect count.
         self.does_url_match_source_list_in_origin_with_redirect_count(
-            &request.url,
+            &request.current_url,
             &request.origin,
             request.redirect_count,
         )
@@ -2413,8 +2420,10 @@ mod test {
 
     #[test]
     pub fn prefetch_request_does_not_violate_policy() {
+        let url = Url::parse("https://www.notriddle.com/script.js").unwrap();
         let request = Request {
-            url: Url::parse("https://www.notriddle.com/script.js").unwrap(),
+            url: url.clone(),
+            current_url: url,
             origin: Origin::Tuple(
                 "https".to_string(),
                 url::Host::Domain("notriddle.com".to_owned()),
@@ -2441,8 +2450,10 @@ mod test {
 
     #[test]
     pub fn prefetch_request_violates_policy() {
+        let url = Url::parse("https://www.notriddle.com/script.js").unwrap();
         let request = Request {
-            url: Url::parse("https://www.notriddle.com/script.js").unwrap(),
+            url: url.clone(),
+            current_url: url,
             origin: Origin::Tuple(
                 "https".to_string(),
                 url::Host::Domain("notriddle.com".to_owned()),
@@ -2474,8 +2485,10 @@ mod test {
 
     #[test]
     pub fn prefetch_request_is_allowed_by_directive() {
+        let url = Url::parse("https://www.notriddle.com/script.js").unwrap();
         let request = Request {
-            url: Url::parse("https://www.notriddle.com/script.js").unwrap(),
+            url: url.clone(),
+            current_url: url,
             origin: Origin::Tuple(
                 "https".to_string(),
                 url::Host::Domain("notriddle.com".to_owned()),
