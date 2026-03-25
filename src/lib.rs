@@ -2391,7 +2391,7 @@ fn scheme_part_match(a: &str, b: &str) -> MatchResult {
     let b = b.to_ascii_lowercase();
     match (&a[..], &b[..]) {
         _ if a == b => Matches,
-        ("http", "https") | ("ws", "wss") | ("wss", "https") => Matches,
+        ("http", "https") | ("ws", "wss" | "http" | "https") | ("wss", "https") => Matches,
         _ => DoesNotMatch,
     }
 }
@@ -2606,6 +2606,36 @@ mod test {
 
         let p = Policy::parse(
             "default-src 'none'; child-src 'self'",
+            PolicySource::Header,
+            PolicyDisposition::Enforce,
+        );
+
+        let violation_result = p.does_request_violate_policy(&request);
+
+        assert!(violation_result == Violates::DoesNotViolate);
+    }
+
+    #[test]
+    pub fn websocket_request_is_allowed_by_directive() {
+        let url = Url::parse("https://www.notriddle.com/websocket").unwrap();
+        let request = Request {
+            url: url.clone(),
+            current_url: url,
+            origin: Origin::Tuple(
+                "https".to_string(),
+                url::Host::Domain("notriddle.com".to_owned()),
+                443,
+            ),
+            redirect_count: 0,
+            destination: Destination::None,
+            initiator: Initiator::None,
+            nonce: String::new(),
+            integrity_metadata: String::new(),
+            parser_metadata: ParserMetadata::None,
+        };
+
+        let p = Policy::parse(
+            "connect-src ws://www.notriddle.com/websocket",
             PolicySource::Header,
             PolicyDisposition::Enforce,
         );
