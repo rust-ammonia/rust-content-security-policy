@@ -812,6 +812,51 @@ impl CspList {
         }
         (result, violations)
     }
+    /// <https://w3c.github.io/webappsec-csp/#should-block-navigation-response>
+    pub fn should_navigation_response_to_navigation_request_be_blocked(
+        &self,
+        response: &Response,
+        self_origin: &Origin,
+        parent_navigable_origins: &Vec<Url>,
+    ) -> (CheckResult, Vec<Violation>) {
+        // Step 1. Let result be "Allowed".
+        let mut result = CheckResult::Allowed;
+        let mut violations = Vec::new();
+        // Step 2. For each policy of response CSP list’s policies:
+        for policy in &self.0 {
+            // Step 2.1. For each directive of policy:
+            for directive in &policy.directive_set {
+                // Step 2.1.1. If directive’s navigation response check returns "Allowed"
+                // when executed upon navigation request, type, navigation response, target,
+                // "response", policy, and response CSP list’s self-origin, skip to the next directive.
+                if directive.navigation_response_check(
+                    response,
+                    self_origin,
+                    parent_navigable_origins,
+                    policy,
+                ) == CheckResult::Allowed
+                {
+                    continue;
+                }
+                // Step 2.1.2. Otherwise, let violation be the result of executing
+                // § 2.4.1 Create a violation object for global, policy, and directive on null, policy, and directive’s name.
+                violations.push(Violation {
+                    // Step 2.1.3. Set violation’s resource to navigation response’s URL.
+                    resource: ViolationResource::Url(response.url.clone()),
+                    directive: directive.clone(),
+                    policy: policy.clone(),
+                });
+                // Step 2.1.5. If policy’s disposition is "enforce", then set result to "Blocked".
+                if policy.disposition == PolicyDisposition::Enforce {
+                    result = CheckResult::Blocked;
+                }
+            }
+        }
+        // Step 3. For each policy of navigation request’s policy container’s CSP list’s policies:
+        //
+        // Note: We do not implement this step, since there is no directive yet that requires it
+        (result, violations)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -999,6 +1044,14 @@ https://fetch.spec.whatwg.org/#concept-response
 pub struct Response {
     pub url: Url,
     pub redirect_count: u32,
+}
+
+/// <https://fetch.spec.whatwg.org/#is-local>
+fn is_local_url(url: &Url) -> bool {
+    // > A URL is local if its scheme is a local scheme.
+    let scheme = url.scheme();
+    // > A local scheme is "about", "blob", or "data".
+    scheme == "about" || scheme == "blob" || scheme == "data"
 }
 
 /**
@@ -1625,6 +1678,55 @@ impl Directive {
                 // Step 7. Set request’s url to newURL.
                 request.url = new_url;
                 // Step 8. Return "Allowed".
+                Allowed
+            }
+            _ => Allowed,
+        }
+    }
+
+    pub fn navigation_response_check(
+        &self,
+        response: &Response,
+        self_origin: &Origin,
+        parent_navigable_origins: &Vec<Url>,
+        _policy: &Policy,
+    ) -> CheckResult {
+        use CheckResult::*;
+        match &self.name[..] {
+            // <https://w3c.github.io/webappsec-csp/#frame-ancestors-navigation-response>
+            "frame-ancestors" => {
+                // Step 1. If navigation response’s URL is local, return "Allowed".
+                if is_local_url(&response.url) {
+                    return Allowed;
+                }
+                // Step 2. Assert: request, navigation response, and navigation type,
+                // are unused from this point forward in this algorithm,
+                // as frame-ancestors is concerned only with navigation response’s frame-ancestors directive.
+
+                // Step 3. If check type is "source", return "Allowed".
+                //
+                // We only call this once for responses
+
+                let source_list = SourceList(&self.value);
+                // Step 4. If target is not a child navigable, return "Allowed".
+                // Step 5. Let current be target.
+                // Step 6. While current is a child navigable:
+                for origin in parent_navigable_origins {
+                    // Step 6.1. Let document be current’s container document.
+                    // Step 6.2. Let origin be the result of executing the URL parser on the ASCII serialization of document’s origin.
+                    // Step 6.3. If § 6.7.2.7 Does url match source list in origin with redirect count? returns
+                    // Does Not Match when executed upon origin, this directive’s value, self-origin, and 0, return "Blocked".
+                    if source_list.does_url_match_source_list_in_origin_with_redirect_count(
+                        origin,
+                        self_origin,
+                        0,
+                    ) == DoesNotMatch
+                    {
+                        return Blocked;
+                    }
+                    // Step 6.4. Set current to document’s node navigable.
+                }
+                // Step 7. Return "Allowed".
                 Allowed
             }
             _ => Allowed,
