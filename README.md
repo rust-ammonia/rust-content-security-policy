@@ -15,7 +15,7 @@ To use `content-security-policy`, add it to your project's `Cargo.toml` file:
 
 ```toml
 [dependencies]
-content-security-policy = "0.7.0"
+content-security-policy = "0.8.0"
 ```
 
 # Example
