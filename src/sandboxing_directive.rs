@@ -3,7 +3,7 @@ use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
 bitflags! {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
     #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
     pub struct SandboxingFlagSet: u32 {
         const SANDBOXED_NAVIGATION_BROWSING_CONTEXT_FLAG = 0x00000001;
