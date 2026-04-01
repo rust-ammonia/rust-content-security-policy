@@ -71,3 +71,9 @@ fn sandbox_document_flags() {
     );
     assert_eq!(None, policy.get_sandboxing_flag_set_for_document());
 }
+
+#[test]
+fn default_sandbox_is_empty() {
+    let derived_default: SandboxingFlagSet = Default::default();
+    assert_eq!(derived_default, SandboxingFlagSet::empty());
+}
