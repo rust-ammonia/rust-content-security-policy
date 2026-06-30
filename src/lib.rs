@@ -1925,7 +1925,8 @@ static SCHEME_SOURCE_GRAMMAR: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"^(?P<scheme>[a-zA-Z][a-zA-Z0-9\+\-\.]*):$"#).unwrap());
 /// https://www.w3.org/TR/CSP/#grammardef-host-source
 static HOST_SOURCE_GRAMMAR: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"^((?P<scheme>[a-zA-Z][a-zA-Z0-9\+\-\.]*)://)?(?P<host>\*|(\*\.)?[a-zA-Z0-9\-]+(\.[a-zA-Z0-9\-]+)*)(?P<port>:(\*|[0-9]+))?(?P<path>/([:@%!\$&'\(\)\*\+,;=0-9a-zA-Z\-\._~]+)?(/[:@%!\$&'\(\)\*\+,;=0-9a-zA-Z\-\._~]*)*)?$"#).unwrap()
+    // host-part   = "*" / [ "*." ] 1*host-char *( "." 1*host-char ) [ "." ]
+    Regex::new(r#"^((?P<scheme>[a-zA-Z][a-zA-Z0-9\+\-\.]*)://)?(?P<host>\*|(\*\.)?[a-zA-Z0-9\-]+(\.[a-zA-Z0-9\-]+)*\.?)(?P<port>:(\*|[0-9]+))?(?P<path>/([:@%!\$&'\(\)\*\+,;=0-9a-zA-Z\-\._~]+)?(/[:@%!\$&'\(\)\*\+,;=0-9a-zA-Z\-\._~]*)*)?$"#).unwrap()
 });
 /// https://www.w3.org/TR/CSP/#grammardef-hash-source
 static HASH_SOURCE_GRAMMAR: Lazy<Regex> = Lazy::new(|| {
