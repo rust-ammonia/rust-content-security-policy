@@ -1,5 +1,9 @@
 # Unreleased
 
+# 0.8.1
+
+* Allow trailing dot CSP host-source
+
 # 0.5.4
 
 * Minimum supported Rust version: 1.81.0
