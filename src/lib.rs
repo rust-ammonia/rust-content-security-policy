@@ -110,30 +110,51 @@ impl Policy {
     }
     /// https://www.w3.org/TR/CSP/#parse-serialized-policy
     pub fn parse(serialized: &str, source: PolicySource, disposition: PolicyDisposition) -> Policy {
+        // Step 1. If serialized is a byte sequence,
+        // then set serialized to be the result of isomorphic decoding serialized.
+        //
+        // N/a, we take in a string
+
+        // Step 2. Let policy be a new policy with an empty directive set,
+        // a source of source, and a disposition of disposition.
         let mut policy = Policy {
             directive_set: Vec::new(),
             source,
             disposition,
         };
+        // Step 3. For each token returned by strictly splitting
+        // serialized on the U+003B SEMICOLON character (;):
+        //
         // Rust's str::split corresponds to a WHATWG "strict split"
         for token in serialized.split(';') {
+            // Step 3.1. Strip leading and trailing ASCII whitespace from token.
             let token = strip_leading_and_trailing_ascii_whitespace(token);
-            if token.is_empty() {
+            // Step 3.2. If token is an empty string,
+            // or if token is not an ASCII string, continue.
+            if token.is_empty() || !token.is_ascii() {
                 continue;
             };
+            // Step 3.3. Let directive name be the result of
+            // collecting a sequence of code points from token which are not ASCII whitespace.
             let (directive_name, token) =
                 collect_a_sequence_of_non_ascii_white_space_code_points(token);
+            // Step 3.4. Set directive name to be the result of running ASCII lowercase on directive name.
             let mut directive_name = directive_name.to_owned();
             directive_name.make_ascii_lowercase();
+            // Step 3.5. If policy’s directive set contains a directive whose name is directive name, continue.
             if policy.contains_a_directive_whose_name_is(&directive_name) {
                 continue;
             }
+            // Step 3.6. Let directive value be the result of splitting token on ASCII whitespace.
             let directive_value = split_ascii_whitespace(token).map(String::from).collect();
+            // Step 3.7. Let directive be a new directive whose name is directive name, and value is directive value.
+            // Step 3.8. Append directive to policy’s directive set.
             policy.directive_set.push(Directive {
                 name: directive_name,
                 value: directive_value,
             });
         }
+        // Step 4. Return policy.
         policy
     }
     pub fn contains_a_directive_whose_name_is(&self, directive_name: &str) -> bool {
@@ -2658,6 +2679,16 @@ mod test {
     }
 
     #[test]
+    pub fn non_ascii_character_in_policy_is_invalid() {
+        let p = Policy::parse(
+            "trusted-types \u{00A1}'none'",
+            PolicySource::Meta,
+            PolicyDisposition::Enforce,
+        );
+        assert!(!p.is_valid());
+    }
+
+    #[test]
     pub fn csp_list_is_valid() {
         let csp_list = CspList::parse(
             "default-src 'none'; child-src 'self', trusted-types 'none'",
@@ -2665,6 +2696,33 @@ mod test {
             PolicyDisposition::Enforce,
         );
         assert!(csp_list.is_valid());
+        assert_eq!(
+            csp_list.0[1].directive_set[0].value,
+            vec!["'none'".to_owned()]
+        );
+    }
+
+    #[test]
+    pub fn non_ascii_character_in_policy_does_not_effect_other_policy() {
+        let csp_list = CspList::parse(
+            "default-src 'none'; child-src \u{00A1}'self', trusted-types 'none'",
+            PolicySource::Meta,
+            PolicyDisposition::Enforce,
+        );
+        assert!(csp_list.is_valid());
+        assert_eq!(csp_list.0.len(), 2);
+        assert_eq!(
+            csp_list.0[0].directive_set[0].name,
+            "default-src".to_owned()
+        );
+        assert_eq!(
+            csp_list.0[0].directive_set[0].value,
+            vec!["'none'".to_owned()]
+        );
+        assert_eq!(
+            csp_list.0[1].directive_set[0].name,
+            "trusted-types".to_owned()
+        );
         assert_eq!(
             csp_list.0[1].directive_set[0].value,
             vec!["'none'".to_owned()]
