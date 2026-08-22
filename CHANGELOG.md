@@ -1,5 +1,9 @@
 # Unreleased
 
+# 0.8.2
+
+* Fix handling of non-ASCII
+
 # 0.8.1
 
 * Allow trailing dot CSP host-source
