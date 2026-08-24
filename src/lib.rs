@@ -2268,6 +2268,18 @@ fn does_url_match_expression_in_origin_with_redirect_count(
             {
                 return Matches;
             }
+            // Non-special schemes have opaque origins, so the fast path above
+            // cannot match even a same-origin URL; compare the components of a
+            // tuple origin the user agent supplies instead. Such schemes have no
+            // default port, which a tuple can only spell as 0. Same scheme only:
+            // the relaxation above is the http upgrade allowance, not for these.
+            if scheme == url_scheme
+                && default_port(scheme).is_none()
+                && hosts_are_the_same
+                && (ports_are_the_same || (*port == 0 && url.port().is_none()))
+            {
+                return Matches;
+            }
         }
     }
     DoesNotMatch
