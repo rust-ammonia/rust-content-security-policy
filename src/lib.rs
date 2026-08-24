@@ -2255,10 +2255,16 @@ fn does_url_match_expression_in_origin_with_redirect_count(
         }
         if let Origin::Tuple(scheme, host, port) = origin {
             let hosts_are_the_same = Some(host) == url.host().map(|p| p.to_owned()).as_ref();
-            let ports_are_the_same = Some(*port) == url.port();
+            // `url.port()` is `None` whenever the port is the default for the
+            // URL's scheme, so compare effective ports, and judge the URL's
+            // default port by the URL's own scheme - the spec asks for "the
+            // default ports for their respective schemes", not for the
+            // protected resource's scheme twice.
+            let url_port = url.port_or_known_default();
+            let ports_are_the_same = Some(*port) == url_port;
             let origins_port_is_default_for_scheme = Some(*port) == default_port(scheme);
             let url_port_is_default_port_for_scheme =
-                url.port() == default_port(scheme) && default_port(scheme).is_some();
+                url_port == default_port(url_scheme) && default_port(url_scheme).is_some();
             let ports_are_default =
                 url_port_is_default_port_for_scheme && origins_port_is_default_for_scheme;
             if hosts_are_the_same
