@@ -1,15 +1,10 @@
 //! `'self'` matching when the user agent supplies a tuple origin for a URL
 //! that the URL standard would give an opaque origin (a non-special scheme).
-//!
-//! Component comparison is opt-in: it applies only to schemes the embedder
-//! registered with [`scheme_registry::add_standard_scheme`], mirroring the
-//! standard-scheme registry Chromium gates its own CSP host matching on.
 extern crate content_security_policy;
 use content_security_policy::url::Host;
 use content_security_policy::*;
 
-/// Registered by every test that expects component comparison to apply.
-/// Registration is idempotent, so tests may run in any order, in parallel.
+/// Registered by every test that needs it, so they may run in any order.
 const REGISTERED: &str = "custom";
 
 /// Never passed to `add_standard_scheme` anywhere in this binary.
@@ -35,9 +30,6 @@ fn tuple(scheme: &str, host: &str, port: u16) -> Origin {
     Origin::Tuple(scheme.to_owned(), Host::Domain(host.to_owned()), port)
 }
 
-/// A scheme the embedder never registered keeps the behaviour the URL standard
-/// prescribes: its origin is opaque, so `'self'` matches nothing, however
-/// exactly the components line up.
 #[test]
 fn self_does_not_match_unregistered_scheme() {
     assert!(!scheme_registry::is_standard_scheme(UNREGISTERED));
@@ -51,7 +43,6 @@ fn self_does_not_match_unregistered_scheme() {
     );
 }
 
-/// Registering one scheme says nothing about any other.
 #[test]
 fn registering_one_scheme_does_not_admit_another() {
     scheme_registry::add_standard_scheme(REGISTERED);
@@ -124,7 +115,6 @@ fn self_does_not_match_other_custom_scheme_port() {
     );
 }
 
-/// The http -> https/wss upgrade allowance must not extend to a custom scheme.
 #[test]
 fn self_on_custom_scheme_does_not_match_network_schemes() {
     scheme_registry::add_standard_scheme(REGISTERED);
@@ -147,8 +137,6 @@ fn self_on_custom_scheme_does_not_match_network_schemes() {
     }
 }
 
-/// ... and a network-scheme document must not reach a custom scheme through
-/// `'self'` either.
 #[test]
 fn self_on_https_does_not_match_custom_scheme() {
     scheme_registry::add_standard_scheme(REGISTERED);
@@ -174,9 +162,8 @@ fn self_on_https_does_not_downgrade() {
     );
 }
 
-/// Registering a scheme changes `'self'` only. A host-source expression names
-/// its own scheme, so it never needed the registry, and an unregistered scheme
-/// still matches one.
+/// A host-source expression names its own scheme, so it never needed the
+/// registry.
 #[test]
 fn host_source_expressions_are_unaffected() {
     assert!(!scheme_registry::is_standard_scheme(UNREGISTERED));

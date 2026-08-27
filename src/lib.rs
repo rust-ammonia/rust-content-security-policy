@@ -2269,16 +2269,11 @@ fn does_url_match_expression_in_origin_with_redirect_count(
             {
                 return Matches;
             }
-            // Non-special schemes have opaque origins, so the fast path above
-            // cannot match even a same-origin URL; compare the components of a
-            // tuple origin the user agent supplies instead. Such schemes have no
-            // default port, which a tuple can only spell as 0. Same scheme only:
-            // the relaxation above is the http upgrade allowance, not for these.
-            //
-            // The specification has no such case, so this is confined to schemes
-            // the embedder registered with `scheme_registry` - the way Chromium
-            // confines it to schemes registered as standard - and a caller that
-            // registers nothing keeps the behaviour the specification prescribes.
+            // Not in the specification: a non-special scheme has an opaque
+            // origin, so the fast path above cannot match even a same-origin
+            // URL. For schemes the embedder registered, compare the tuple
+            // origin's components instead - same scheme only, and with 0 as
+            // the tuple's only spelling for "no port".
             if scheme == url_scheme
                 && default_port(scheme).is_none()
                 && scheme_registry::is_standard_scheme(scheme)
