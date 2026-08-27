@@ -42,6 +42,7 @@ pub extern crate percent_encoding;
 pub extern crate url;
 
 pub mod sandboxing_directive;
+pub mod scheme_registry;
 pub(crate) mod text_util;
 
 use once_cell::sync::Lazy;
@@ -2297,6 +2298,19 @@ fn does_url_match_expression_in_origin_with_redirect_count(
                 && ((url_scheme == "https" || url_scheme == "wss")
                     // Step 4.2.2.2. origin’s scheme is "http" and url’s scheme is "http" or "ws"
                     || (scheme == "http" && (url_scheme == "http" || url_scheme == "ws")))
+            {
+                return Matches;
+            }
+            // Not in the specification: a non-special scheme has an opaque
+            // origin, so the fast path above cannot match even a same-origin
+            // URL. For schemes the embedder registered, compare the tuple
+            // origin's components instead - same scheme only, and with 0 as
+            // the tuple's only spelling for "no port".
+            if scheme == url_scheme
+                && default_port(scheme).is_none()
+                && scheme_registry::is_standard_scheme(scheme)
+                && hosts_are_the_same
+                && (ports_are_the_same || (*port == 0 && url.port().is_none()))
             {
                 return Matches;
             }
