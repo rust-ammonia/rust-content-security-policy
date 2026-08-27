@@ -2193,20 +2193,28 @@ fn does_url_match_expression_in_origin_with_redirect_count(
     origin: &Origin,
     redirect_count: u32,
 ) -> MatchResult {
+    // Step 1. If expression is the string "*", return "Matches" if one or more of the following conditions is met:
     let url_scheme = url.scheme();
     if expression == "*" {
+        // Step 1.1. url’s scheme is an HTTP(S) scheme.
         if scheme_is_network(url_scheme) {
             return Matches;
         }
+        // Step 1.2. url’s scheme is the same as origin’s scheme.
         return origin_scheme_part_match(origin, url_scheme);
     }
+    // Step 2. If expression matches the scheme-source or host-source grammar:
     if let Some(captures) = SCHEME_SOURCE_GRAMMAR.captures(expression) {
+        // Step 2.1. If expression has a scheme-part, and it does not scheme-part match url’s scheme,
+        // return "Does Not Match".
+        // Step 2.2. If expression matches the scheme-source grammar, return "Matches".
         if let Some(expression_scheme) = captures.name("scheme") {
             return scheme_part_match(expression_scheme.as_str(), url_scheme);
         }
         // It should not be possible to match HOST_SOURCE_GRAMMAR without having a scheme part
         return DoesNotMatch;
     }
+    // Step 3. If expression matches the host-source grammar:
     if let Some(captures) = HOST_SOURCE_GRAMMAR.captures(expression) {
         let expr_has_scheme_part = if let Some(expression_scheme) = captures.name("scheme") {
             if scheme_part_match(expression_scheme.as_str(), url_scheme) != Matches {
@@ -2219,11 +2227,16 @@ fn does_url_match_expression_in_origin_with_redirect_count(
         let url_host = if let Some(url_host) = url.host() {
             url_host
         } else {
+            // Step 3.1. If url’s host is null, return "Does Not Match".
             return DoesNotMatch;
         };
+        // Step 3.2. If expression does not have a scheme-part,
+        // and origin’s scheme does not scheme-part match url’s scheme,
+        // return "Does Not Match".
         if !expr_has_scheme_part && origin_scheme_part_match(origin, url.scheme()) != Matches {
             return DoesNotMatch;
         }
+        // Step 3.3. If expression’s host-part does not host-part match url’s host, return "Does Not Match".
         if let Some(expression_host) = captures.name("host") {
             if host_part_match(expression_host.as_str(), &url_host.to_string()) != Matches {
                 return DoesNotMatch;
@@ -2232,27 +2245,44 @@ fn does_url_match_expression_in_origin_with_redirect_count(
             // It should not be possible to match HOST_SOURCE_GRAMMAR without having a host part
             return DoesNotMatch;
         }
+        // Step 3.4. Let port-part be expression’s port-part if present, and null otherwise.
+        //
         // Skip the first byte of the port capture to avoid the `:`.
         let port_part = captures.name("port").map(|port| &port.as_str()[1..]);
+        // Step 3.5. If port-part does not port-part match url, return "Does Not Match".
         if port_part_match(port_part, url) != Matches {
             return DoesNotMatch;
         }
+        // Step 3.6. If expression contains a non-empty path-part, and redirect count is 0, then:
         let path_part = captures
             .name("path")
             .map(|path_part| path_part.as_str())
             .unwrap_or("");
         if path_part != "/" && redirect_count == 0 {
+            // Step 3.6.1. Let path be the result of running the URL path serializer on url.
             let path = url.path();
+            // Step 3.6.2. If expression’s path-part does not path-part match path, return "Does Not Match".
             if path_part_match(path_part, path) != Matches {
                 return DoesNotMatch;
             }
         }
+        // Step 3.7. Return "Matches".
         return Matches;
     }
+    // Step 4. If expression is an ASCII case-insensitive match for "'self'", then:
     if ascii_case_insensitive_match(expression, "'self'") {
+        // Step 4.1. If url’s scheme is "blob", return "Does Not Match".
+        if url.scheme() == "blob" {
+            return DoesNotMatch;
+        }
+        // Step 4.2. Return "Matches" if one or more of the following conditions is met:
+        // Step 4.2.1. origin and url’s origin are same origin
         if *origin == url.origin() {
             return Matches;
         }
+        // Step 4.2.2. origin’s host is the same as url’s host, origin’s port
+        // and url’s port are either the same or the default ports for their respective schemes,
+        // and one or more of the following conditions is met:
         if let Origin::Tuple(scheme, host, port) = origin {
             let hosts_are_the_same = Some(host) == url.host().map(|p| p.to_owned()).as_ref();
             let ports_are_the_same = Some(*port) == url.port();
@@ -2263,13 +2293,16 @@ fn does_url_match_expression_in_origin_with_redirect_count(
                 url_port_is_default_port_for_scheme && origins_port_is_default_for_scheme;
             if hosts_are_the_same
                 && (ports_are_the_same || ports_are_default)
+                // Step 4.2.2.1. url’s scheme is "https" or "wss"
                 && ((url_scheme == "https" || url_scheme == "wss")
+                    // Step 4.2.2.2. origin’s scheme is "http" and url’s scheme is "http" or "ws"
                     || (scheme == "http" && (url_scheme == "http" || url_scheme == "ws")))
             {
                 return Matches;
             }
         }
     }
+    // Step 5. Return "Does Not Match".
     DoesNotMatch
 }
 
@@ -2635,6 +2668,41 @@ mod test {
         let violation_result = p.does_request_violate_policy(&request);
 
         assert!(violation_result == Violates::DoesNotViolate);
+    }
+
+    #[test]
+    pub fn blob_url_does_not_match_self() {
+        let url = Url::parse("blob:https://www.notriddle.com/script.js").unwrap();
+        let request = Request {
+            url: url.clone(),
+            current_url: url,
+            origin: Origin::Tuple(
+                "https".to_string(),
+                url::Host::Domain("notriddle.com".to_owned()),
+                443,
+            ),
+            redirect_count: 0,
+            destination: Destination::Worker,
+            initiator: Initiator::None,
+            nonce: String::new(),
+            integrity_metadata: String::new(),
+            parser_metadata: ParserMetadata::None,
+        };
+
+        let p = Policy::parse(
+            "worker-src 'self'",
+            PolicySource::Header,
+            PolicyDisposition::Enforce,
+        );
+
+        let violation_result = p.does_request_violate_policy(&request);
+
+        let expected_result = Violates::Directive(Directive {
+            name: String::from("worker-src"),
+            value: vec![String::from("'self'")],
+        });
+
+        assert!(violation_result == expected_result);
     }
 
     #[test]
