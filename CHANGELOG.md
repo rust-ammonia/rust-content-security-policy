@@ -1,5 +1,10 @@
 # Unreleased
 
+* Add `scheme_registry`, an opt-in allowlist of schemes whose origin the
+  embedder defines, modelled on Chromium's standard-scheme registry. `'self'`
+  matches a same-scheme, same-host, same-port URL that the URL Standard would
+  give an opaque origin only when its scheme has been registered.
+
 # 0.8.2
 
 * Fix handling of non-ASCII

@@ -42,6 +42,7 @@ pub extern crate percent_encoding;
 pub extern crate url;
 
 pub mod sandboxing_directive;
+pub mod scheme_registry;
 pub(crate) mod text_util;
 
 use once_cell::sync::Lazy;
@@ -2273,8 +2274,14 @@ fn does_url_match_expression_in_origin_with_redirect_count(
             // tuple origin the user agent supplies instead. Such schemes have no
             // default port, which a tuple can only spell as 0. Same scheme only:
             // the relaxation above is the http upgrade allowance, not for these.
+            //
+            // The specification has no such case, so this is confined to schemes
+            // the embedder registered with `scheme_registry` - the way Chromium
+            // confines it to schemes registered as standard - and a caller that
+            // registers nothing keeps the behaviour the specification prescribes.
             if scheme == url_scheme
                 && default_port(scheme).is_none()
+                && scheme_registry::is_standard_scheme(scheme)
                 && hosts_are_the_same
                 && (ports_are_the_same || (*port == 0 && url.port().is_none()))
             {
