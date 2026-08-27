@@ -28,13 +28,6 @@ use once_cell::sync::Lazy;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{PoisonError, RwLock};
 
-/// Either the URL Standard already defines the scheme's origin, or the scheme
-/// has a default port that a tuple origin cannot tell from an absent one.
-fn registration_would_be_inert(scheme: &str) -> bool {
-    matches!(scheme, "ftp" | "file" | "http" | "https" | "ws" | "wss")
-        || crate::default_port(scheme).is_some()
-}
-
 static STANDARD_SCHEMES: Lazy<RwLock<Vec<String>>> = Lazy::new(|| RwLock::new(Vec::new()));
 
 /// Lets the common case - a caller that never opts in - answer
@@ -45,10 +38,11 @@ static ANY_SCHEME_REGISTERED: AtomicBool = AtomicBool::new(false);
 ///
 /// Call this during start-up, before any policy is checked. Scheme comparison is
 /// ASCII case-insensitive. Registering the same scheme twice does nothing, and
-/// so does registering a special scheme or one with a default port.
+/// neither does registering one with a default port: a tuple origin cannot tell
+/// that from an absent port, so `'self'` matching skips it either way.
 pub fn add_standard_scheme(scheme: &str) {
     let scheme = scheme.to_ascii_lowercase();
-    if scheme.is_empty() || registration_would_be_inert(&scheme) {
+    if scheme.is_empty() || crate::default_port(&scheme).is_some() {
         return;
     }
     let mut schemes = STANDARD_SCHEMES
@@ -100,15 +94,15 @@ mod test {
     }
 
     #[test]
-    fn unregistered_and_special_schemes_are_not_standard() {
-        add_standard_scheme("https");
-        assert!(!is_standard_scheme("https"));
+    fn unregistered_schemes_are_not_standard() {
         assert!(!is_standard_scheme("registry-unit-test-never-registered"));
     }
 
     #[test]
     fn schemes_with_a_default_port_are_refused() {
-        add_standard_scheme("gopher");
-        assert!(!is_standard_scheme("gopher"));
+        for scheme in ["ftp", "http", "https", "ws", "wss", "gopher"] {
+            add_standard_scheme(scheme);
+            assert!(!is_standard_scheme(scheme), "{}", scheme);
+        }
     }
 }
