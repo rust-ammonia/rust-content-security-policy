@@ -1,5 +1,7 @@
 # Unreleased
 
+* Add `Text` variant to `Destination`
+
 # 0.8.2
 
 * Fix handling of non-ASCII
