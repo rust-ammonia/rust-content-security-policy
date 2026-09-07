@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.8.3
+
 * Add `Text` variant to `Destination`
 
 # 0.8.2
