@@ -1,8 +1,12 @@
 # Unreleased
 
-# 0.8.3
+# 0.9.0
 
 * Add `Text` variant to `Destination`
+
+# 0.8.3
+
+Yanked: use 0.9.0 instead
 
 # 0.8.2
 
